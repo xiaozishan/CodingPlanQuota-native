@@ -7,8 +7,10 @@ import org.json.JSONObject
 /**
  * 本地存储：主题模式、供应商配置、上次查询结果缓存。
  *
- * API Key 落盘一律经 [Vault] 加密（AES-256-GCM，密钥在 Android Keystore）；
- * 内存中的 [Provider.apiKey] 保持明文，供查询时使用。
+ * 凭据落盘一律经 [Vault] 加密（AES-256-GCM，密钥在 Android Keystore）：
+ * - 主凭据 [Provider.token]
+ * - extra 里 [SENSITIVE_EXTRA_KEYS] 列出的字段（sessionJson / backendToken / cookie / secretAccessKey）
+ * 内存中保持明文，供查询时使用。
  */
 class Prefs(context: Context) {
 
@@ -30,26 +32,40 @@ class Prefs(context: Context) {
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
                 val kind = runCatching { ProviderKind.valueOf(o.optString("kind")) }
                     .getOrDefault(ProviderKind.CUSTOM)
-                val stored = o.optString("apiKey")
-                if (stored.isNotBlank() && !Vault.isEncrypted(stored)) legacyPlaintext = true
+
+                val storedKey = o.optString("apiKey")
+                if (storedKey.isNotBlank() && !Vault.isEncrypted(storedKey)) legacyPlaintext = true
+
                 val extraObj = o.optJSONObject("extra")
                 val extra = buildMap {
                     if (extraObj != null) {
-                        extraObj.keys().forEach { k -> put(k, extraObj.optString(k)) }
+                        extraObj.keys().forEach { k ->
+                            val v = extraObj.optString(k)
+                            put(
+                                k,
+                                if (k in SENSITIVE_EXTRA_KEYS) {
+                                    if (v.isNotBlank() && !Vault.isEncrypted(v)) {
+                                        legacyPlaintext = true
+                                    }
+                                    Vault.decrypt(v)
+                                } else v
+                            )
+                        }
                     }
                 }
+
                 Provider(
                     id = o.optString("id"),
                     kind = kind,
                     name = o.optString("name", kind.label),
                     baseUrl = o.optString("baseUrl"),
-                    apiKey = Vault.decrypt(stored),
+                    token = Vault.decrypt(storedKey),
                     extra = extra,
                 )
             }
         }.getOrDefault(emptyList())
 
-        // 旧版本的明文 Key：解出后立刻加密回写，本地不再留明文
+        // 旧版本的明文凭据：解出后立刻加密回写，本地不再留明文
         if (legacyPlaintext) saveProviders(list)
 
         return list
@@ -59,14 +75,16 @@ class Prefs(context: Context) {
         val arr = JSONArray()
         list.forEach { p ->
             val extraObj = JSONObject()
-            p.extra.forEach { (k, v) -> extraObj.put(k, v) }
+            p.extra.forEach { (k, v) ->
+                extraObj.put(k, if (k in SENSITIVE_EXTRA_KEYS) Vault.encrypt(v) else v)
+            }
             arr.put(
                 JSONObject()
                     .put("id", p.id)
                     .put("kind", p.kind.name)
                     .put("name", p.name)
                     .put("baseUrl", p.baseUrl)
-                    .put("apiKey", Vault.encrypt(p.apiKey))
+                    .put("apiKey", Vault.encrypt(p.token))
                     .put("extra", extraObj)
             )
         }
