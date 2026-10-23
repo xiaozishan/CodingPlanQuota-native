@@ -1,12 +1,14 @@
 package io.paimon.quota.data
 
 /** 供应商类型（内置端点 / 解析器） */
-enum class ProviderKind(val label: String, val needsBaseUrl: Boolean) {
-    DEEPSEEK("DeepSeek", false),
-    KIMI("Kimi", false),
-    ZHIPU("智谱 GLM", false),
-    MINIMAX("MiniMax", false),
-    CUSTOM("自定义 JSON", true),
+enum class ProviderKind(val label: String, val needsBaseUrl: Boolean = false) {
+    DEEPSEEK("DeepSeek"),
+    KIMI("Kimi"),
+    ZHIPU("智谱 GLM"),
+    MINIMAX("MiniMax"),
+    CODEX("Codex（ChatGPT）"),
+    ANTHROPIC("Claude"),
+    CUSTOM("自定义 JSON", needsBaseUrl = true),
 }
 
 /** 一个已保存的供应商配置 */
@@ -16,6 +18,7 @@ data class Provider(
     val name: String,
     val baseUrl: String = "",
     val apiKey: String = "",
+    /** 额外字段，例如 Codex 的 accountId */
     val extra: Map<String, String> = emptyMap(),
 )
 
@@ -31,6 +34,7 @@ data class QuotaResult(
     val ok: Boolean,
     val tiers: List<Tier> = emptyList(),
     val balanceText: String? = null,
+    val message: String? = null,
     val error: String? = null,
     val at: Long = System.currentTimeMillis(),
 )

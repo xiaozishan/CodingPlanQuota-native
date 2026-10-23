@@ -1,5 +1,6 @@
 package io.paimon.quota.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -82,7 +83,7 @@ private fun ProviderCard(p: Provider, r: QuotaResult?, onClick: () -> Unit) {
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(18.dp)) {
@@ -107,40 +108,73 @@ private fun ProviderCard(p: Provider, r: QuotaResult?, onClick: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             when {
-                r == null -> Text("尚未查询", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                !r.ok -> Text("查询失败：" + (r.error ?: "未知错误"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                r == null -> Text(
+                    "尚未查询",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                !r.ok -> Text(
+                    "查询失败：" + (r.error ?: "未知错误"),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
                 r.balanceText != null -> Text(
                     r.balanceText,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     r.tiers.forEach { t ->
-                        Column {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(t.label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${"%.1f".format(t.usedPct)}%", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Box(
-                                Modifier.fillMaxWidth().height(6.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
-                            ) {
-                                Box(
-                                    Modifier.fillMaxWidth((t.usedPct / 100.0).toFloat().coerceIn(0f, 1f))
-                                        .height(6.dp)
-                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
-                                )
-                            }
-                            if (!t.resetAt.isNullOrBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text("重置：${t.resetAt}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                        TierBar(t.label, t.usedPct, t.resetAt)
                     }
                 }
             }
+
+            if (r != null && r.ok && !r.message.isNullOrBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    r.message,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TierBar(label: String, usedPct: Double, resetAt: String?) {
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "${"%.1f".format(usedPct)}%",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            Modifier.fillMaxWidth().height(6.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
+        ) {
+            Box(
+                Modifier.fillMaxWidth((usedPct / 100.0).toFloat().coerceIn(0f, 1f))
+                    .height(6.dp)
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
+            )
+        }
+        if (!resetAt.isNullOrBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "重置：" + resetAt,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
