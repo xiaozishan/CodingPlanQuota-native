@@ -11,6 +11,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.Locale
 import java.util.UUID
 
 internal data class AuthSession(
@@ -362,9 +363,11 @@ internal object AntigravityProvider {
 
     private data class Bucket(val model: String, val usedPct: Double, val resetText: String?, val resetMs: Long?)
 
+    private enum class QuotaWindow { CURRENT, WEEKLY }
+
     /**
      * buckets 是按模型给的，但用户真正关心的是「5 小时窗口」和「本周窗口」这两条线。
-     * 这里按 reset_time 的远近把模型归到两个窗口，各出一条汇总（取该窗口内最紧的那个）。
+     * 优先使用响应里的显式窗口类型，否则按 reset_time 远近归组；汇总取该窗口内最紧的那个。
      */
     private fun parseBuckets(body: JSONObject): List<Tier> {
         val arr = body.optJSONArray("buckets")
@@ -387,7 +390,15 @@ internal object AntigravityProvider {
             val reset = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
             val used = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0)
             val bucket = Bucket(model, used, reset, resetMs)
-            if (resetMs != null && resetMs - now <= windowMs) fiveHour.add(bucket) else weekly.add(bucket)
+            when (explicitQuotaWindow(item)) {
+                QuotaWindow.CURRENT -> fiveHour.add(bucket)
+                QuotaWindow.WEEKLY -> weekly.add(bucket)
+                null -> if (resetMs != null && resetMs - now <= windowMs) {
+                    fiveHour.add(bucket)
+                } else {
+                    weekly.add(bucket)
+                }
+            }
             details.add(Tier(model, used, reset))
         }
 
@@ -405,6 +416,30 @@ internal object AntigravityProvider {
             summarize("本周窗口", weekly),
         )
         return summary + details
+    }
+
+    /** 响应若直接给窗口类型就优先使用；没有可识别的类型时才按 reset_time 推断。 */
+    private fun explicitQuotaWindow(item: JSONObject): QuotaWindow? {
+        val keys = listOf("quotaWindow", "quota_window", "windowType", "window_type")
+        for (key in keys) {
+            val value = item.opt(key)
+            val raw = when (value) {
+                is JSONObject -> listOf("type", "name", "id", "window").firstNotNullOfOrNull { field ->
+                    toStr(value.opt(field))?.takeIf { it.isNotBlank() }
+                }
+
+                else -> toStr(value)
+            } ?: continue
+            val normalized = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]+"), "_")
+            when {
+                normalized.contains("WEEK") || normalized.contains("SEVEN_DAY") ||
+                    normalized.contains("7_DAY") || normalized.contains("168_HOUR") -> return QuotaWindow.WEEKLY
+
+                normalized.contains("FIVE_HOUR") || normalized.contains("5_HOUR") ||
+                    normalized == "5H" || normalized.contains("300_MIN") -> return QuotaWindow.CURRENT
+            }
+        }
+        return null
     }
 
     /** 兼容 models 映射、models 数组及按 provider 分组的嵌套响应。 */

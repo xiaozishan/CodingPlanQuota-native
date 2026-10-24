@@ -79,7 +79,10 @@ internal fun AntigravityLoginDialog(
 
     Dialog(
         onDismissRequest = onCancel,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+        ),
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),

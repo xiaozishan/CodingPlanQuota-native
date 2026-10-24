@@ -1,5 +1,6 @@
 package io.paimon.quota.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -13,6 +14,8 @@ fun SettingsScreen(
     onModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit,
 ) {
+    BackHandler(onBack = onBack)
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {

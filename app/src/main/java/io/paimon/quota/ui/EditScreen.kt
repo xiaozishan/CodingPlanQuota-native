@@ -3,6 +3,7 @@ package io.paimon.quota.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,6 +16,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import io.paimon.quota.data.Provider
 import io.paimon.quota.data.ProviderKind
 import io.paimon.quota.data.provider.AntigravityProvider
@@ -131,6 +133,9 @@ fun EditScreen(
             existing?.extra?.forEach { (k, v) -> put(k, v) }
         }
     }
+
+    // 登录弹窗打开时由弹窗独占返回，避免关闭弹窗的同时又退出编辑页。
+    BackHandler(enabled = authSession == null, onBack = onBack)
 
     fun cancelLogin() {
         loginJob?.cancel()
@@ -386,8 +391,11 @@ private fun ManualCallbackDialog(
     onCancel: () -> Unit,
     onSubmit: () -> Unit,
 ) {
+    BackHandler(onBack = onCancel)
+
     AlertDialog(
         onDismissRequest = onCancel,
+        properties = DialogProperties(dismissOnBackPress = false),
         title = { Text("手动完成 Google 登录") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

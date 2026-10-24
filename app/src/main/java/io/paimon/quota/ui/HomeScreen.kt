@@ -1,5 +1,6 @@
 package io.paimon.quota.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import io.paimon.quota.data.Provider
 import io.paimon.quota.data.ProviderKind
 import io.paimon.quota.data.QuotaResult
@@ -185,8 +187,11 @@ private fun RawJsonDialog(raw: String, onDismiss: () -> Unit) {
     val endpoints = knownEndpoints.filter { name -> lines.any { it == "$name:" } }
     val endpointText = endpoints.joinToString(" / ").ifBlank { "Antigravity" }
 
+    BackHandler(onBack = onDismiss)
+
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnBackPress = false),
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("关闭") }
         },
