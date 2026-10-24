@@ -23,6 +23,7 @@ enum class ProviderKind(
     MIMO("MiMo Token Plan"),
     ANTHROPIC("Claude"),
     GEMINI("Gemini Code Assist"),
+    ANTIGRAVITY("Antigravity"),
     CUSTOM("自定义 JSON", needsBaseUrl = true),
 }
 
@@ -34,7 +35,7 @@ data class Provider(
     val baseUrl: String = "",
     /** 主凭据：API Key / access_token / 团队版 Key 等 */
     val token: String = "",
-    /** 额外字段：accountId、organizationId、sessionJson、backendToken… */
+    /** 额外字段：accountId、organizationId、sessionJson、accessToken… */
     val extra: Map<String, String> = emptyMap(),
 )
 
@@ -61,4 +62,6 @@ val SENSITIVE_EXTRA_KEYS = setOf(
     "backendToken",
     "cookie",
     "secretAccessKey",
+    "accessToken",
+    "refresh_token",
 )

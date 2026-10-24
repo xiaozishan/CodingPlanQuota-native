@@ -9,7 +9,7 @@ import org.json.JSONObject
  *
  * 凭据落盘一律经 [Vault] 加密（AES-256-GCM，密钥在 Android Keystore）：
  * - 主凭据 [Provider.token]
- * - extra 里 [SENSITIVE_EXTRA_KEYS] 列出的字段（sessionJson / backendToken / cookie / secretAccessKey）
+ * - extra 里 [SENSITIVE_EXTRA_KEYS] 列出的会话、OAuth 与访问凭据字段
  * 内存中保持明文，供查询时使用。
  */
 class Prefs(context: Context) {

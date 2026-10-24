@@ -1,5 +1,6 @@
 package io.paimon.quota.data
 
+import io.paimon.quota.data.provider.AntigravityProvider
 import io.paimon.quota.data.provider.ChatgptPlusProvider
 import io.paimon.quota.data.provider.CodexFeelolProvider
 import io.paimon.quota.data.provider.GeminiProvider
@@ -19,7 +20,13 @@ import java.util.Locale
  */
 object QuotaApi {
 
-    suspend fun fetch(p: Provider): QuotaResult = withContext(Dispatchers.IO) {
+    suspend fun fetch(
+        p: Provider,
+        onProviderUpdated: (Provider) -> Unit = {},
+    ): QuotaResult = withContext(Dispatchers.IO) {
+        if (p.kind == ProviderKind.ANTIGRAVITY && p.token.isBlank()) {
+            return@withContext QuotaResult(false, error = "需要重新登录")
+        }
         if (p.kind != ProviderKind.CUSTOM &&
             p.kind != ProviderKind.CHATGPT_PLUS &&
             p.kind != ProviderKind.MIMO &&
@@ -54,6 +61,7 @@ object QuotaApi {
                 ProviderKind.CHATGPT_PLUS -> ChatgptPlusProvider.fetch(p)
                 ProviderKind.MIMO -> MimoProvider.fetch(p)
                 ProviderKind.GEMINI -> GeminiProvider.fetch(p)
+                ProviderKind.ANTIGRAVITY -> AntigravityProvider.fetch(p, onProviderUpdated)
 
                 ProviderKind.CODEX -> parseCodex(
                     Http.get(

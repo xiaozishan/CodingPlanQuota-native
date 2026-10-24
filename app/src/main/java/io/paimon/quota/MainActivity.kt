@@ -39,24 +39,45 @@ private fun AppRoot(prefs: Prefs) {
     var providers by remember { mutableStateOf(prefs.loadProviders()) }
     var results by remember { mutableStateOf<Map<String, QuotaResult>>(emptyMap()) }
     var loading by remember { mutableStateOf(false) }
+    var queryGeneration by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    // OAuth 刷新发生在 IO 线程；回到主线程只合并登录态，保留用户同时编辑的名称等字段。
+    fun persistProviderAuth(updated: Provider) {
+        scope.launch {
+            providers = providers.map { old ->
+                if (old.id != updated.id) old
+                else old.copy(
+                    token = updated.token,
+                    extra = old.extra + updated.extra.filterKeys {
+                        it == "accessToken" || it == "expiresAt"
+                    },
+                )
+            }
+            prefs.saveProviders(providers)
+        }
+    }
+
+    suspend fun fetchQuota(p: Provider): QuotaResult =
+        QuotaApi.fetch(p) { updated -> persistProviderAuth(updated) }
 
     fun refreshAll() {
         if (loading || providers.isEmpty()) return
         loading = true
         scope.launch {
             val out = mutableMapOf<String, QuotaResult>()
-            providers.forEach { p -> out[p.id] = QuotaApi.fetch(p) }
+            providers.forEach { p -> out[p.id] = fetchQuota(p) }
             results = out
             loading = false
         }
     }
 
-    LaunchedEffect(providers) {
+    // 仅用户保存/删除后开启新一轮查询；OAuth 回写登录态本身不重复刷新。
+    LaunchedEffect(queryGeneration) {
         if (providers.isNotEmpty()) {
             loading = true
             val out = mutableMapOf<String, QuotaResult>()
-            providers.forEach { p -> out[p.id] = QuotaApi.fetch(p) }
+            providers.forEach { p -> out[p.id] = fetchQuota(p) }
             results = out
             loading = false
         }
@@ -82,11 +103,13 @@ private fun AppRoot(prefs: Prefs) {
                         providers = if (s.provider == null) providers + p
                         else providers.map { if (it.id == p.id) p else it }
                         prefs.saveProviders(providers)
+                        queryGeneration++
                         screen = Screen.Home
                     },
                     onDelete = if (s.provider == null) null else { p ->
                         providers = providers.filterNot { it.id == p.id }
                         prefs.saveProviders(providers)
+                        queryGeneration++
                         screen = Screen.Home
                     },
                 )
