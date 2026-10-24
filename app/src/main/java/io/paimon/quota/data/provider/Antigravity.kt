@@ -245,11 +245,30 @@ internal object AntigravityProvider {
         "Client-Metadata" to CLIENT_METADATA,
     )
 
+    /** 把 reset_time 解析成毫秒时间戳；解析不了就返回 null。 */
+    private fun resetEpoch(o: Any?): Long? {
+        val raw = toStr(o) ?: return null
+        return runCatching { java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli() }
+            .recoverCatching { java.time.Instant.parse(raw).toEpochMilli() }
+            .getOrNull()
+    }
+
+    private data class Bucket(val model: String, val usedPct: Double, val resetText: String?, val resetMs: Long?)
+
+    /**
+     * buckets 是按模型给的，但用户真正关心的是「5 小时窗口」和「本周窗口」这两条线。
+     * 这里按 reset_time 的远近把模型归到两个窗口，各出一条汇总（取该窗口内最紧的那个）。
+     */
     private fun parseBuckets(body: JSONObject): List<Tier> {
         val arr = body.optJSONArray("buckets")
             ?: body.optJSONObject("result")?.optJSONArray("buckets")
             ?: return emptyList()
-        val tiers = mutableListOf<Tier>()
+        val now = System.currentTimeMillis()
+        val windowMs = 6L * 60L * 60L * 1000L
+        val fiveHour = mutableListOf<Bucket>()
+        val weekly = mutableListOf<Bucket>()
+        val details = mutableListOf<Tier>()
+
         for (i in 0 until arr.length()) {
             val item = arr.optJSONObject(i) ?: continue
             val model = toStr(item.opt("model_id"))
@@ -257,10 +276,28 @@ internal object AntigravityProvider {
                 ?: toStr(item.opt("model"))
                 ?: continue
             val fraction = remainingFraction(item) ?: continue
+            val resetMs = resetEpoch(item.opt("reset_time")) ?: resetEpoch(item.opt("resetTime"))
             val reset = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
-            tiers.add(Tier(model, ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0), reset))
+            val used = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0)
+            val bucket = Bucket(model, used, reset, resetMs)
+            if (resetMs != null && resetMs - now <= windowMs) fiveHour.add(bucket) else weekly.add(bucket)
+            details.add(Tier(model, used, reset))
         }
-        return tiers
+
+        fun summarize(label: String, group: List<Bucket>): Tier? {
+            if (group.isEmpty()) return null
+            val worst = group.maxByOrNull { it.usedPct } ?: return null
+            val earliest = group.mapNotNull { it.resetMs }.minOrNull()
+            val resetLabel = group.firstOrNull { it.resetMs == earliest }?.resetText
+                ?: worst.resetText
+            return Tier(label, worst.usedPct, resetLabel)
+        }
+
+        val summary = listOfNotNull(
+            summarize("5 小时窗口", fiveHour),
+            summarize("本周窗口", weekly),
+        )
+        return summary + details
     }
 
     /** 兼容 models 映射、models 数组及按 provider 分组的嵌套响应。 */
