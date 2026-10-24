@@ -71,6 +71,12 @@ internal fun AntigravityLoginDialog(
     var callbackHandled by remember(session) { mutableStateOf(false) }
     var localError by remember(session) { mutableStateOf<String?>(null) }
 
+    // 侧滑/系统返回：网页还能后退就让网页后退，退到底再关弹窗
+    androidx.activity.compose.BackHandler {
+        val view = webView
+        if (view != null && view.canGoBack()) view.goBack() else onCancel()
+    }
+
     Dialog(
         onDismissRequest = onCancel,
         properties = DialogProperties(usePlatformDefaultWidth = false),

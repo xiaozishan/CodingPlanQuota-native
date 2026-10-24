@@ -54,6 +54,7 @@ data class QuotaResult(
     val message: String? = null,
     val error: String? = null,
     val at: Long = System.currentTimeMillis(),
+    val raw: String? = null,
 )
 
 /** extra 里需要加密落盘的字段（会话/凭据类） */

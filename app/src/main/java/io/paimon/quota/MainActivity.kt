@@ -42,6 +42,11 @@ private fun AppRoot(prefs: Prefs) {
     var queryGeneration by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
+    // 侧滑返回 / 系统返回键：非首页一律回首页（Android 13+ 预测式返回动画依赖 manifest 的 enableOnBackInvokedCallback）
+    androidx.activity.compose.BackHandler(enabled = screen != Screen.Home) {
+        screen = Screen.Home
+    }
+
     // OAuth 刷新发生在 IO 线程；回到主线程只合并登录态，保留用户同时编辑的名称等字段。
     fun persistProviderAuth(updated: Provider) {
         scope.launch {

@@ -51,8 +51,10 @@ internal object AntigravityProvider {
     private const val AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
     private const val TOKEN_URL = "https://oauth2.googleapis.com/token"
     private const val USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+    private const val CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
     private const val QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
     private const val MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+    private const val CODE_ASSIST_BODY = "{\"metadata\":{\"pluginType\":\"GEMINI\"}}"
     private const val CALLBACK_PORT = 51121
     private const val CALLBACK_PATH = "/oauth-callback"
     private const val REDIRECT_URI = "http://localhost:$CALLBACK_PORT$CALLBACK_PATH"
@@ -204,38 +206,77 @@ internal object AntigravityProvider {
             onProviderUpdated(current)
         }
 
+        var planName: String? = null
+        var project = current.extra["projectId"].orEmpty()
+        var codeAssistRaw: String? = null
+        val codeAssist = runCatching {
+            Http.post(CODE_ASSIST_URL, CODE_ASSIST_BODY, quotaHeaders(accessToken))
+        }.getOrNull()
+        if (codeAssist?.ok == true) {
+            codeAssistRaw = codeAssist.body
+            codeAssist.json?.let { body ->
+                val info = parseCodeAssist(body)
+                planName = info.planName
+                if (project.isBlank() && !info.projectId.isNullOrBlank()) {
+                    project = info.projectId.orEmpty()
+                }
+            }
+        }
+
+        var primaryRaw: String? = null
+        var fallbackRaw: String? = null
+        fun raw(): String? = rawSections(
+            "retrieveUserQuota" to primaryRaw,
+            "fetchAvailableModels" to fallbackRaw,
+            "loadCodeAssist" to codeAssistRaw,
+        )
+        val message = listOfNotNull(
+            current.extra["email"]?.takeIf { it.isNotBlank() },
+            planName?.takeIf { it.isNotBlank() },
+        ).joinToString(" ｜ ").ifBlank { null }
+
         val primary = Http.post(QUOTA_URL, "{}", quotaHeaders(accessToken))
-        if (!primary.ok) return QuotaResult(false, error = httpError("查询 Antigravity 额度", primary))
+        if (primary.ok) primaryRaw = primary.body
+        if (!primary.ok) {
+            return QuotaResult(false, error = httpError("查询 Antigravity 额度", primary), raw = raw())
+        }
         val primaryJson = primary.json
-            ?: return QuotaResult(false, error = notJsonError("查询 Antigravity 额度", primary))
+            ?: return QuotaResult(
+                false,
+                error = notJsonError("查询 Antigravity 额度", primary),
+                raw = raw(),
+            )
         val tiers = parseBuckets(primaryJson)
         if (tiers.isNotEmpty()) {
-            return QuotaResult(true, tiers = tiers, message = current.extra["email"])
+            return QuotaResult(true, tiers = tiers, message = message, raw = raw())
         }
 
         // 某些账号的 retrieveUserQuota 返回空 buckets，改从可用模型里的 quotaInfo 取剩余比例。
-        val project = current.extra["projectId"].orEmpty()
         val fallbackBody = if (project.isBlank()) "{}" else JSONObject().put("project", project).toString()
         val fallback = Http.post(MODELS_URL, fallbackBody, quotaHeaders(accessToken))
+        if (fallback.ok) fallbackRaw = fallback.body
         if (!fallback.ok) {
             return QuotaResult(
                 false,
                 error = "retrieveUserQuota 没有可展示的额度；" + httpError("fetchAvailableModels 兜底", fallback),
+                raw = raw(),
             )
         }
         val fallbackJson = fallback.json
             ?: return QuotaResult(
                 false,
                 error = "retrieveUserQuota 没有可展示的额度；" + notJsonError("fetchAvailableModels 兜底", fallback),
+                raw = raw(),
             )
         val fallbackTiers = parseAvailableModels(fallbackJson)
         return if (fallbackTiers.isEmpty()) {
             QuotaResult(
                 false,
                 error = "retrieveUserQuota 没有可展示的额度，fetchAvailableModels 也没有解析出剩余比例",
+                raw = raw(),
             )
         } else {
-            QuotaResult(true, tiers = fallbackTiers, message = current.extra["email"])
+            QuotaResult(true, tiers = fallbackTiers, message = message, raw = raw())
         }
     }
 
@@ -244,6 +285,72 @@ internal object AntigravityProvider {
         "User-Agent" to "Antigravity/1.0.0",
         "Client-Metadata" to CLIENT_METADATA,
     )
+
+    private data class CodeAssistInfo(
+        val planName: String?,
+        val projectId: String?,
+    )
+
+    /** loadCodeAssist 的包装层级可能随账号/接口版本变化，按键名递归查找。 */
+    private fun parseCodeAssist(body: JSONObject): CodeAssistInfo {
+        val currentTier = findNestedValue(body, "currentTier")
+        val currentName = tierField(currentTier, "name") ?: tierField(currentTier, "id")
+        val paidName = tierField(findNestedValue(body, "paidTier"), "name")
+        val project = projectValue(findNestedValue(body, "cloudaicompanionProject"))
+            ?: projectValue(findNestedValue(body, "project"))
+        return CodeAssistInfo(planName = currentName ?: paidName, projectId = project)
+    }
+
+    private fun tierField(tier: Any?, key: String): String? = when (tier) {
+        is JSONObject -> stringValue(findNestedValue(tier, key))
+        else -> if (key == "id") stringValue(tier) else null
+    }
+
+    private fun projectValue(value: Any?): String? = when (value) {
+        is JSONObject -> stringValue(value.opt("projectId"))
+            ?: stringValue(value.opt("id"))
+            ?: stringValue(value.opt("name"))
+
+        else -> stringValue(value)
+    }
+
+    private fun stringValue(value: Any?): String? = toStr(value)?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun findNestedValue(node: Any?, key: String, depth: Int = 0): Any? {
+        if (depth > 12) return null
+        when (node) {
+            is JSONObject -> {
+                val direct = node.opt(key)
+                if (direct != null && direct != JSONObject.NULL &&
+                    (direct !is String || direct.isNotBlank())
+                ) {
+                    return direct
+                }
+                val keys = node.keys()
+                while (keys.hasNext()) {
+                    val child = node.opt(keys.next())
+                    if (child !is JSONObject && child !is JSONArray) continue
+                    val found = findNestedValue(child, key, depth + 1)
+                    if (found != null && found != JSONObject.NULL) return found
+                }
+            }
+
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    val found = findNestedValue(node.opt(i), key, depth + 1)
+                    if (found != null && found != JSONObject.NULL) return found
+                }
+            }
+        }
+        return null
+    }
+
+    private fun rawSections(vararg sections: Pair<String, String?>): String? {
+        val text = sections.mapNotNull { (name, body) ->
+            body?.let { "$name:\n$it" }
+        }.joinToString("\n\n")
+        return text.takeIf { it.isNotBlank() }?.take(20_000)
+    }
 
     /** 把 reset_time 解析成毫秒时间戳；解析不了就返回 null。 */
     private fun resetEpoch(o: Any?): Long? {

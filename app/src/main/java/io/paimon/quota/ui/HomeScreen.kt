@@ -5,15 +5,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.paimon.quota.data.Provider
+import io.paimon.quota.data.ProviderKind
 import io.paimon.quota.data.QuotaResult
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,6 +32,8 @@ fun HomeScreen(
     onEdit: (Provider) -> Unit,
     onSettings: () -> Unit,
 ) {
+    var rawJson by remember { mutableStateOf<String?>(null) }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -71,14 +78,28 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(providers, key = { it.id }) { p ->
-                ProviderCard(p, results[p.id], onClick = { onEdit(p) })
+                ProviderCard(
+                    p = p,
+                    r = results[p.id],
+                    onClick = { onEdit(p) },
+                    onShowRaw = { rawJson = it },
+                )
             }
         }
+    }
+
+    rawJson?.let { raw ->
+        RawJsonDialog(raw = raw, onDismiss = { rawJson = null })
     }
 }
 
 @Composable
-private fun ProviderCard(p: Provider, r: QuotaResult?, onClick: () -> Unit) {
+private fun ProviderCard(
+    p: Provider,
+    r: QuotaResult?,
+    onClick: () -> Unit,
+    onShowRaw: (String) -> Unit,
+) {
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(18.dp),
@@ -142,8 +163,56 @@ private fun ProviderCard(p: Provider, r: QuotaResult?, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
+            val raw = r?.raw?.takeIf { it.isNotEmpty() }
+            if (p.kind == ProviderKind.ANTIGRAVITY && raw != null) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    onClick = { onShowRaw(raw) },
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                ) {
+                    Text("查看原始 JSON", fontSize = 12.sp)
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun RawJsonDialog(raw: String, onDismiss: () -> Unit) {
+    val knownEndpoints = listOf("retrieveUserQuota", "fetchAvailableModels", "loadCodeAssist")
+    val lines = raw.lineSequence().toList()
+    val endpoints = knownEndpoints.filter { name -> lines.any { it == "$name:" } }
+    val endpointText = endpoints.joinToString(" / ").ifBlank { "Antigravity" }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+        title = {
+            Text(
+                "原始 JSON · $endpointText",
+                fontSize = 16.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            SelectionContainer(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    raw,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                )
+            }
+        },
+    )
 }
 
 @Composable
