@@ -250,10 +250,20 @@ fun EditScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(20.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = androidx.compose.ui.Alignment.TopCenter,
         ) {
+            val pagePadding = if (maxWidth >= 600.dp) 24.dp else 20.dp
+            Column(
+                Modifier
+                    .widthIn(max = 840.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(horizontal = pagePadding, vertical = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
             Text("类型", color = MaterialTheme.colorScheme.onSurfaceVariant)
             ChipRows(
                 options = ProviderKind.entries,
@@ -442,6 +452,7 @@ fun EditScreen(
                 OutlinedButton(onClick = { onDelete(existing) }, modifier = Modifier.fillMaxWidth()) {
                     Text("删除这个供应商")
                 }
+            }
             }
         }
     }

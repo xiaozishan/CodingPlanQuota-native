@@ -3,10 +3,17 @@ package io.paimon.quota
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.paimon.quota.data.Prefs
 import io.paimon.quota.data.Provider
 import io.paimon.quota.data.QuotaApi
@@ -14,6 +21,8 @@ import io.paimon.quota.data.QuotaResult
 import io.paimon.quota.data.provider.GeminiWebQuota
 import io.paimon.quota.ui.EditScreen
 import io.paimon.quota.ui.HomeScreen
+import io.paimon.quota.ui.QuotaDestination
+import io.paimon.quota.ui.QuotaNavigationRail
 import io.paimon.quota.ui.QuotaTheme
 import io.paimon.quota.ui.SettingsScreen
 import io.paimon.quota.ui.ThemeMode
@@ -86,8 +95,28 @@ private fun AppRoot(prefs: Prefs) {
     }
 
     QuotaTheme(mode) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            when (val s = screen) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth >= 840.dp
+                Row(Modifier.fillMaxSize()) {
+                    if (wide) {
+                        QuotaNavigationRail(
+                            selected = if (screen == Screen.Settings) {
+                                QuotaDestination.SETTINGS
+                            } else {
+                                QuotaDestination.HOME
+                            },
+                            onSelect = { destination ->
+                                screen = when (destination) {
+                                    QuotaDestination.HOME -> Screen.Home
+                                    QuotaDestination.SETTINGS -> Screen.Settings
+                                }
+                            },
+                        )
+                    }
+
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        when (val s = screen) {
                 Screen.Home -> HomeScreen(
                     providers = providers,
                     results = results,
@@ -96,6 +125,7 @@ private fun AppRoot(prefs: Prefs) {
                     onAdd = { screen = Screen.Edit(null) },
                     onEdit = { screen = Screen.Edit(it) },
                     onSettings = { screen = Screen.Settings },
+                    showSettingsAction = !wide,
                 )
 
                 is Screen.Edit -> EditScreen(
@@ -124,6 +154,9 @@ private fun AppRoot(prefs: Prefs) {
                     },
                     onBack = { screen = Screen.Home },
                 )
+                        }
+                    }
+                }
             }
         }
     }

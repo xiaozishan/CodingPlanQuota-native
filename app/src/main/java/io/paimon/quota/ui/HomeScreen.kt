@@ -34,6 +34,7 @@ fun HomeScreen(
     onAdd: () -> Unit,
     onEdit: (Provider) -> Unit,
     onSettings: () -> Unit,
+    showSettingsAction: Boolean = true,
 ) {
     var rawJson by remember { mutableStateOf<String?>(null) }
 
@@ -50,7 +51,9 @@ fun HomeScreen(
                     TextButton(onClick = onRefresh, enabled = !loading) {
                         Text(if (loading) "刷新中" else "刷新")
                     }
-                    TextButton(onClick = onSettings) { Text("设置") }
+                    if (showSettingsAction) {
+                        TextButton(onClick = onSettings) { Text("设置") }
+                    }
                 },
             )
         },

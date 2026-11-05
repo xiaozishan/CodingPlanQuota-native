@@ -2,8 +2,11 @@ package io.paimon.quota.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -29,10 +32,20 @@ fun SettingsScreen(
             )
         },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            val pagePadding = if (maxWidth >= 600.dp) 24.dp else 20.dp
+            Column(
+                Modifier
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(horizontal = pagePadding, vertical = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
             Text("外观", color = MaterialTheme.colorScheme.onSurfaceVariant)
             ThemeMode.entries.forEach { m ->
                 Row(
@@ -52,6 +65,7 @@ fun SettingsScreen(
                 "黑白单色主题：界面只用明度层次，不含任何色相。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            }
         }
     }
 }
