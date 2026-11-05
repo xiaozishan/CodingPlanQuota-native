@@ -29,6 +29,7 @@ object QuotaApi {
         }
         if (p.kind != ProviderKind.CUSTOM &&
             p.kind != ProviderKind.CHATGPT_PLUS &&
+            p.kind != ProviderKind.GEMINI &&
             p.kind != ProviderKind.MIMO &&
             p.token.isBlank()
         ) {
@@ -58,9 +59,9 @@ object QuotaApi {
                 ProviderKind.OPENCODE_GO -> OpencodeGoProvider.fetch(p)
                 ProviderKind.VOLCENGINE -> VolcengineProvider.fetch(p)
                 ProviderKind.CODEX_FEELOL -> CodexFeelolProvider.fetch(p)
-                ProviderKind.CHATGPT_PLUS -> ChatgptPlusProvider.fetch(p)
+                ProviderKind.CHATGPT_PLUS -> ChatgptPlusProvider.fetch(p, onProviderUpdated)
                 ProviderKind.MIMO -> MimoProvider.fetch(p)
-                ProviderKind.GEMINI -> GeminiProvider.fetch(p)
+                ProviderKind.GEMINI -> GeminiProvider.fetch(p, onProviderUpdated)
                 ProviderKind.ANTIGRAVITY -> AntigravityProvider.fetch(p, onProviderUpdated)
 
                 ProviderKind.CODEX -> parseCodex(

@@ -27,6 +27,13 @@ internal data class CallbackResult(
     val error: String,
 )
 
+/** Gemini 与 Antigravity 共用 Google OAuth 刷新结果。 */
+internal data class GoogleRefresh(
+    val accessToken: String,
+    val refreshToken: String,
+    val expiresAt: Long,
+)
+
 /**
  * Antigravity：Google OAuth（PKCE）登录、access_token 刷新与模型额度查询。
  *
@@ -106,7 +113,7 @@ internal object AntigravityProvider {
                 false,
                 "",
                 "",
-                "这不是 Antigravity 的 http://localhost:$CALLBACK_PORT$CALLBACK_PATH 回调链接",
+                "这不是 Google 登录的 http://localhost:$CALLBACK_PORT$CALLBACK_PATH 回调链接",
             )
         }
         val params = parseQuery(uri.rawQuery)
@@ -161,6 +168,31 @@ internal object AntigravityProvider {
         )
     }
 
+    /** 共用 Google refresh_token 流程；Google 通常不轮换 refresh_token，此时保留旧值。 */
+    internal fun refreshGoogleToken(refreshToken: String): GoogleRefresh {
+        if (refreshToken.isBlank()) throw IllegalStateException("Google 登录已过期，请重新登录")
+        val response = Http.post(
+            TOKEN_URL,
+            form(
+                mapOf(
+                    "grant_type" to "refresh_token",
+                    "refresh_token" to refreshToken,
+                    "client_id" to CLIENT_ID,
+                    "client_secret" to CLIENT_SECRET,
+                )
+            ),
+            mapOf("Content-Type" to "application/x-www-form-urlencoded"),
+        )
+        val body = requireJson("刷新 Google 登录态", response)
+        val accessToken = body.optString("access_token")
+        if (accessToken.isBlank()) throw IllegalStateException("刷新登录态失败：返回里没有 access_token")
+        return GoogleRefresh(
+            accessToken = accessToken,
+            refreshToken = body.optString("refresh_token").ifBlank { refreshToken },
+            expiresAt = expiryFrom(body),
+        )
+    }
+
     /** 查询额度；如发生刷新，先通过 [onProviderUpdated] 回写新 access_token 与到期时间。 */
     suspend fun fetch(
         p: Provider,
@@ -175,33 +207,15 @@ internal object AntigravityProvider {
             expiresAt != null && expiresAt > System.currentTimeMillis() + 60_000L
 
         if (!accessValid) {
-            val refreshResponse = Http.post(
-                TOKEN_URL,
-                form(
-                    mapOf(
-                        "grant_type" to "refresh_token",
-                        "refresh_token" to p.token,
-                        "client_id" to CLIENT_ID,
-                        "client_secret" to CLIENT_SECRET,
-                    )
-                ),
-                mapOf("Content-Type" to "application/x-www-form-urlencoded"),
-            )
-            if (!refreshResponse.ok) {
-                return QuotaResult(false, error = httpError("刷新登录态", refreshResponse))
+            val refreshed = runCatching { refreshGoogleToken(p.token) }.getOrElse {
+                return QuotaResult(false, error = it.message ?: "刷新 Google 登录态失败")
             }
-            val body = refreshResponse.json
-                ?: return QuotaResult(false, error = notJsonError("刷新登录态", refreshResponse))
-            accessToken = body.optString("access_token")
-            if (accessToken.isBlank()) {
-                return QuotaResult(false, error = "刷新登录态失败：返回里没有 access_token")
-            }
-            val newRefreshToken = body.optString("refresh_token").ifBlank { p.token }
+            accessToken = refreshed.accessToken
             current = p.copy(
-                token = newRefreshToken,
+                token = refreshed.refreshToken,
                 extra = p.extra + mapOf(
                     "accessToken" to accessToken,
-                    "expiresAt" to expiryFrom(body).toString(),
+                    "expiresAt" to refreshed.expiresAt.toString(),
                 ),
             )
             onProviderUpdated(current)

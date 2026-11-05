@@ -21,6 +21,9 @@ import io.paimon.quota.data.Provider
 import io.paimon.quota.data.ProviderKind
 import io.paimon.quota.data.provider.AntigravityProvider
 import io.paimon.quota.data.provider.AuthSession
+import io.paimon.quota.data.provider.ChatgptPlusProvider
+import io.paimon.quota.data.provider.GeminiProvider
+import io.paimon.quota.data.provider.GeminiWebQuota
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -51,7 +54,7 @@ private fun fieldsFor(kind: ProviderKind): List<ExtraField> = when (kind) {
     ProviderKind.CODEX -> listOf(ExtraField("accountId", "ChatGPT Account ID（可选）"))
 
     ProviderKind.CHATGPT_PLUS -> listOf(
-        ExtraField("sessionJson", "Session JSON（chatgpt.com/api/auth/session）", secret = true, multiline = true),
+        ExtraField("sessionJson", "Session JSON（旧版兼容，可留空）", secret = true, multiline = true),
     )
 
     ProviderKind.MIMO -> listOf(
@@ -73,7 +76,7 @@ private fun showsMainKey(kind: ProviderKind): Boolean = when (kind) {
 private fun tokenLabel(kind: ProviderKind): String = when (kind) {
     ProviderKind.CODEX -> "ChatGPT access_token"
     ProviderKind.ANTHROPIC -> "Claude OAuth access_token"
-    ProviderKind.GEMINI -> "Google OAuth access_token"
+    ProviderKind.GEMINI -> "Google OAuth access_token（可留空，推荐下方登录）"
     ProviderKind.CODEX_FEELOL -> "feelol token"
     else -> "API Key"
 }
@@ -84,7 +87,7 @@ private fun hintText(kind: ProviderKind): String = when (kind) {
     ProviderKind.ANTHROPIC ->
         "OAuth access_token，走 platform.claude.com 的 usage 接口；实验性支持。"
     ProviderKind.GEMINI ->
-        "Google Cloud OAuth access_token，走 cloudcode-pa 的 retrieveUserQuota；实验性支持。"
+        "默认读取 Gemini 网页版（Google AI Pro）额度；Cloud Code 仅是可选模型配额备用，手贴 access_token 仍保留。"
     ProviderKind.ANTIGRAVITY ->
         "使用 Google OAuth + PKCE 登录；refresh_token 与 access_token 只加密保存在本机。"
     ProviderKind.ZHIPU -> "国内站走 open.bigmodel.cn，国际站走 api.z.ai（按你填的地址判断）。"
@@ -94,7 +97,7 @@ private fun hintText(kind: ProviderKind): String = when (kind) {
     ProviderKind.OPENCODE_GO -> "固定走 opencode.ai/zen/go/v1/usage；403 表示没有 Go 订阅。"
     ProviderKind.VOLCENGINE -> "用 AK/SK 签名请求；region 留空按 cn-beijing 处理。"
     ProviderKind.CODEX_FEELOL -> "第三方中转 feea.lol，实验性支持。"
-    ProviderKind.CHATGPT_PLUS -> "不发网络请求，只按 session JSON 里的套餐与续费日换算倒计时。"
+    ProviderKind.CHATGPT_PLUS -> "主路径使用 OpenAI OAuth + PKCE 登录并查询用量；旧版手贴 Session JSON 仍可按续费日显示倒计时。"
     ProviderKind.MIMO -> "两种模式二选一：后端地址 + Token，或直连 Cookie。"
     ProviderKind.CUSTOM -> "地址返回 JSON 时优先读 used_pct，否则显示原始返回片段。"
     else -> "凭据只保存在本机，用 Android Keystore 加密（AES-256-GCM）。"
@@ -128,6 +131,7 @@ fun EditScreen(
     var manualLogin by remember { mutableStateOf(false) }
     var manualCallback by remember { mutableStateOf("") }
     var loginJob by remember { mutableStateOf<Job?>(null) }
+    var chatGptAuthSession by remember { mutableStateOf<AuthSession?>(null) }
     val extras = remember {
         mutableStateMapOf<String, String>().apply {
             existing?.extra?.forEach { (k, v) -> put(k, v) }
@@ -135,7 +139,7 @@ fun EditScreen(
     }
 
     // 登录弹窗打开时由弹窗独占返回，避免关闭弹窗的同时又退出编辑页。
-    BackHandler(enabled = authSession == null, onBack = onBack)
+    BackHandler(enabled = authSession == null && chatGptAuthSession == null, onBack = onBack)
 
     fun cancelLogin() {
         loginJob?.cancel()
@@ -143,6 +147,7 @@ fun EditScreen(
         loginBusy = false
         loginError = null
         authSession = null
+        chatGptAuthSession = null
     }
 
     fun openManualAuthorization(session: AuthSession) {
@@ -159,16 +164,22 @@ fun EditScreen(
         loginError = null
         loginJob = scope.launch {
             try {
-                val loggedIn = AntigravityProvider.exchangeCode(code, session.codeVerifier)
+                val loginKind = kind
+                val loggedIn = when (loginKind) {
+                    ProviderKind.GEMINI -> GeminiProvider.exchangeCode(code, session.codeVerifier)
+                    else -> AntigravityProvider.exchangeCode(code, session.codeVerifier)
+                }
                 val mergedExtra = buildMap {
                     putAll(loggedIn.extra)
-                    extras["projectId"]?.takeIf { it.isNotBlank() }?.let { put("projectId", it) }
+                    if (loginKind == ProviderKind.ANTIGRAVITY) {
+                        extras["projectId"]?.takeIf { it.isNotBlank() }?.let { put("projectId", it) }
+                    }
                 }
                 // 保留当前表单的 id、名称和项目，复用保存入口回到列表并自动查询额度。
                 onSave(
                     loggedIn.copy(
                         id = providerId,
-                        name = name.ifBlank { ProviderKind.ANTIGRAVITY.label },
+                        name = name.ifBlank { loginKind.label },
                         baseUrl = baseUrl,
                         extra = mergedExtra,
                     )
@@ -177,6 +188,31 @@ fun EditScreen(
                 throw e
             } catch (e: Exception) {
                 loginError = e.message ?: "Google 登录失败"
+            } finally {
+                loginBusy = false
+                loginJob = null
+            }
+        }
+    }
+
+    fun exchangeChatGpt(session: AuthSession, code: String) {
+        if (loginBusy) return
+        loginBusy = true
+        loginError = null
+        loginJob = scope.launch {
+            try {
+                val loggedIn = ChatgptPlusProvider.exchangeCode(code, session.codeVerifier)
+                onSave(
+                    loggedIn.copy(
+                        id = providerId,
+                        name = name.ifBlank { ProviderKind.CHATGPT_PLUS.label },
+                        baseUrl = baseUrl,
+                    )
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                loginError = e.message ?: "OpenAI 登录失败"
             } finally {
                 loginBusy = false
                 loginJob = null
@@ -245,13 +281,17 @@ fun EditScreen(
                 )
             }
 
-            if (kind == ProviderKind.ANTIGRAVITY) {
+            if (kind == ProviderKind.ANTIGRAVITY || kind == ProviderKind.GEMINI) {
                 Button(
                     enabled = !loginBusy,
                     onClick = {
                         loginError = null
                         manualLogin = false
-                        authSession = AntigravityProvider.buildAuthUrl()
+                        authSession = if (kind == ProviderKind.GEMINI) {
+                            GeminiProvider.buildAuthUrl()
+                        } else {
+                            AntigravityProvider.buildAuthUrl()
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -267,7 +307,11 @@ fun EditScreen(
                 TextButton(
                     enabled = !loginBusy,
                     onClick = {
-                        val session = AntigravityProvider.buildAuthUrl()
+                        val session = if (kind == ProviderKind.GEMINI) {
+                            GeminiProvider.buildAuthUrl()
+                        } else {
+                            AntigravityProvider.buildAuthUrl()
+                        }
                         loginError = null
                         manualCallback = ""
                         manualLogin = true
@@ -279,28 +323,54 @@ fun EditScreen(
                     Text("无法打开网页？手动粘贴回调链接", fontSize = 12.sp)
                 }
 
+                if (kind == ProviderKind.GEMINI) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Cloud Code 备用", fontSize = 14.sp)
+                            Text(
+                                "网页额度失败时查询模型配额；不是 Google AI Pro 网页用量",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                            )
+                        }
+                        Switch(
+                            checked = extras["cloudcodeFallback"]?.toBooleanStrictOrNull() == true,
+                            onCheckedChange = { extras["cloudcodeFallback"] = it.toString() },
+                        )
+                    }
+                }
+
                 loginError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
 
-                if (keyText.isNotBlank()) {
-                    Text("登录账号：" + extras["email"].orEmpty().ifBlank { "未知" })
-                    Text(
-                        "访问令牌到期：" + expiryText(extras["expiresAt"]),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
+                if (keyText.isNotBlank() ||
+                    (kind == ProviderKind.GEMINI && !extras["refresh_token"].isNullOrBlank())
+                ) {
+                    if (kind == ProviderKind.GEMINI && extras["refresh_token"].isNullOrBlank()) {
+                        Text("当前使用手动 access_token；过期后需重新粘贴或改用 Google 登录。")
+                    } else {
+                        Text("登录账号：" + extras["email"].orEmpty().ifBlank { "未知" })
+                        Text(
+                            "访问令牌到期：" + expiryText(extras["expiresAt"]),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
                     OutlinedButton(
                         enabled = !loginBusy,
                         onClick = {
                             keyText = ""
-                            listOf("accessToken", "expiresAt", "email").forEach(extras::remove)
+                            listOf("accessToken", "refresh_token", "expiresAt", "email").forEach(extras::remove)
                             // 退出登录也立即保存，避免仅清空界面而旧凭据仍留在本机。
                             onSave(
                                 Provider(
                                     id = providerId,
-                                    kind = ProviderKind.ANTIGRAVITY,
-                                    name = name.ifBlank { ProviderKind.ANTIGRAVITY.label },
+                                    kind = kind,
+                                    name = name.ifBlank { kind.label },
                                     token = "",
                                     extra = extras.filterValues { it.isNotBlank() },
                                 )
@@ -308,6 +378,33 @@ fun EditScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("退出登录") }
+                }
+            }
+
+            if (kind == ProviderKind.CHATGPT_PLUS) {
+                Button(
+                    enabled = !loginBusy,
+                    onClick = {
+                        loginError = null
+                        chatGptAuthSession = ChatgptPlusProvider.buildAuthUrl()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (keyText.isBlank()) "使用 OpenAI 登录" else "重新使用 OpenAI 登录")
+                }
+                if (keyText.isNotBlank()) {
+                    Text("已通过 OpenAI OAuth 登录")
+                    Text(
+                        "访问令牌到期：" + expiryText(extras["expiresAt"]),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
+                } else if (!extras["sessionJson"].isNullOrBlank()) {
+                    Text(
+                        "当前使用旧版 Session JSON；建议改用 OpenAI 登录。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
                 }
             }
 
@@ -375,8 +472,23 @@ fun EditScreen(
                 busy = loginBusy,
                 errorMessage = loginError,
                 onRetry = { loginError = null },
+                sharedWebView = if (kind == ProviderKind.GEMINI) {
+                    GeminiWebQuota.obtainWebView(context)
+                } else null,
             )
         }
+    }
+
+    chatGptAuthSession?.let { session ->
+        ChatgptLoginDialog(
+            session = session,
+            onCancel = { cancelLogin() },
+            onCode = { code -> exchangeChatGpt(session, code) },
+            onError = { loginError = it },
+            busy = loginBusy,
+            errorMessage = loginError,
+            onRetry = { loginError = null },
+        )
     }
 }
 

@@ -22,7 +22,7 @@ enum class ProviderKind(
     CHATGPT_PLUS("ChatGPT Plus"),
     MIMO("MiMo Token Plan"),
     ANTHROPIC("Claude"),
-    GEMINI("Gemini Code Assist"),
+    GEMINI("Gemini（网页版）"),
     ANTIGRAVITY("Antigravity"),
     CUSTOM("自定义 JSON", needsBaseUrl = true),
 }
@@ -44,6 +44,8 @@ data class Tier(
     val label: String,
     val usedPct: Double,
     val resetAt: String? = null,
+    /** 次数额度或「未展示」等不能直接换算成百分比时的显示文本。 */
+    val valueText: String? = null,
 )
 
 /** 一次查询结果 */

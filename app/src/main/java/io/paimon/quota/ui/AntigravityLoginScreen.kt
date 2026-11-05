@@ -7,6 +7,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.ViewGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,7 +43,7 @@ import io.paimon.quota.data.provider.CallbackResult
 
 /** WebView 与手动粘贴入口共用的纯回调校验。 */
 internal fun callbackValidationError(result: CallbackResult, expectedState: String): String? = when {
-    !result.isCallback -> result.error.ifBlank { "请粘贴完整的 Antigravity 回调链接" }
+    !result.isCallback -> result.error.ifBlank { "请粘贴完整的 Google 登录回调链接" }
     result.error.isNotBlank() -> {
         if (result.error == "access_denied") "已取消 Google 登录"
         else "Google 登录失败：${result.error}"
@@ -62,11 +63,12 @@ internal fun AntigravityLoginDialog(
     busy: Boolean = false,
     errorMessage: String? = null,
     onRetry: () -> Unit = {},
+    sharedWebView: WebView? = null,
 ) {
     val currentSession by rememberUpdatedState(session)
     val currentOnCode by rememberUpdatedState(onCode)
     val currentOnError by rememberUpdatedState(onError)
-    var webView by remember { mutableStateOf<WebView?>(null) }
+    var webView by remember(session) { mutableStateOf(sharedWebView) }
     var loading by remember(session) { mutableStateOf(true) }
     var callbackHandled by remember(session) { mutableStateOf(false) }
     var localError by remember(session) { mutableStateOf<String?>(null) }
@@ -138,7 +140,9 @@ internal fun AntigravityLoginDialog(
                 AndroidView(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     factory = { context ->
-                        WebView(context).apply {
+                        val view = sharedWebView ?: WebView(context)
+                        (view.parent as? ViewGroup)?.removeView(view)
+                        view.apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.userAgentString =
@@ -146,6 +150,7 @@ internal fun AntigravityLoginDialog(
                                 "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
+                            CookieManager.getInstance().setAcceptCookie(true)
                             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
                             fun reportError(message: String) {
@@ -158,6 +163,7 @@ internal fun AntigravityLoginDialog(
                                 val result = AntigravityProvider.parseCallback(url)
                                 if (!result.isCallback) return false
                                 view.stopLoading()
+                                CookieManager.getInstance().flush()
                                 if (callbackHandled) return true
                                 callbackHandled = true
                                 val validationError = callbackValidationError(result, currentSession.state)
@@ -208,6 +214,9 @@ internal fun AntigravityLoginDialog(
     }
 
     DisposableEffect(Unit) {
-        onDispose { webView?.destroy() }
+        onDispose {
+            // Gemini 的共享 WebView 要保留登录会话，弹窗关闭只负责与视图树分离。
+            if (sharedWebView == null) webView?.destroy()
+        }
     }
 }

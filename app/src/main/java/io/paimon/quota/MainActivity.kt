@@ -11,6 +11,7 @@ import io.paimon.quota.data.Prefs
 import io.paimon.quota.data.Provider
 import io.paimon.quota.data.QuotaApi
 import io.paimon.quota.data.QuotaResult
+import io.paimon.quota.data.provider.GeminiWebQuota
 import io.paimon.quota.ui.EditScreen
 import io.paimon.quota.ui.HomeScreen
 import io.paimon.quota.ui.QuotaTheme
@@ -27,6 +28,7 @@ private sealed interface Screen {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        GeminiWebQuota.initialize(applicationContext)
         val prefs = Prefs(this)
         setContent { AppRoot(prefs) }
     }
@@ -50,7 +52,7 @@ private fun AppRoot(prefs: Prefs) {
                 else old.copy(
                     token = updated.token,
                     extra = old.extra + updated.extra.filterKeys {
-                        it == "accessToken" || it == "expiresAt"
+                        it == "accessToken" || it == "expiresAt" || it == "refresh_token" || it == "accountId"
                     },
                 )
             }

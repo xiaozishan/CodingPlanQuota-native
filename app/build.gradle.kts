@@ -12,8 +12,8 @@ android {
         applicationId = "io.paimon.quota"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.5.4"
+        versionCode = 18
+        versionName = "0.5.13"
     }
 
     signingConfigs {
