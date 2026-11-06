@@ -53,6 +53,8 @@ data class QuotaResult(
     val ok: Boolean,
     val tiers: List<Tier> = emptyList(),
     val balanceText: String? = null,
+    /** DeepSeek 等数值型余额；保留原始数值，避免从展示文本反解析。 */
+    val balanceAmount: Double? = null,
     val message: String? = null,
     val error: String? = null,
     val at: Long = System.currentTimeMillis(),

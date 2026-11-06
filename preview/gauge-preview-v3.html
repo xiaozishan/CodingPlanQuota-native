@@ -1,0 +1,31 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+:root{--bg:#f7f8fa;--card:#fff;--line:#e6e8ec;--txt:#1d2129;--sub:#86909c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;color:var(--txt)}
+.wrap{width:1600px;padding:28px 32px;display:flex;gap:36px}
+h3{margin:0 0 14px;font-size:15px;color:var(--sub);letter-spacing:1px}
+.phone{width:360px;display:flex;flex-direction:column;gap:12px}
+.tablet{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-content:start}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.name{font-size:16px;font-weight:700}.prov{font-size:12px;color:var(--sub)}
+.gauges{display:flex;gap:24px;margin-top:6px}
+.g{display:flex;flex-direction:column;align-items:center;gap:6px}
+.arc{position:relative;width:98px;height:98px;border-radius:50%}
+.arc::after{content:"";position:absolute;inset:10px;border-radius:50%;background:var(--card)}
+.pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;z-index:2}
+.lbl,.reset{font-size:11px;color:var(--sub)}
+.bal{display:flex;align-items:center;gap:16px;margin-top:6px}.money{font-size:26px;font-weight:800}
+</style></head><body><div class="wrap">
+<div><h3>手机 · 单列</h3><div class="phone"><div class="card"><div class="head"><span class="name">老爹</span><span class="prov">Kimi</span></div>
+    <div class="gauges"><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#70ea41 0deg,#92ea41 86.4deg,#eef1f5 86.4deg 360deg)"><div class="pct">24%</div></div><div class="lbl">5 小时</div><div class="reset">重置 09:36</div></div><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#81ea41 0deg,#a3ea41 104.4deg,#eef1f5 104.4deg 360deg)"><div class="pct">29%</div></div><div class="lbl">本周</div><div class="reset">重置 16:36</div></div></div></div><div class="card"><div class="head"><span class="name">ChatGPT Plus</span><span class="prov">ChatGPT Plus</span></div>
+    <div class="gauges"><div class="g"><div class="arc" style="background:conic-gradient(#eef1f5 0 360deg)"><div class="pct">0%</div></div><div class="lbl">5 小时</div><div class="reset">重置 13:01</div></div><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#59ea41 0deg,#7bea41 61.2deg,#eef1f5 61.2deg 360deg)"><div class="pct">17%</div></div><div class="lbl">本周</div><div class="reset">重置 11-12</div></div></div></div><div class="card"><div class="head"><span class="name">Gemini</span><span class="prov">Gemini（网页版）</span></div>
+    <div class="gauges"><div class="g"><div class="arc" style="background:conic-gradient(#eef1f5 0 360deg)"><div class="pct">0%</div></div><div class="lbl">5 小时</div><div class="reset">重置 8:37</div></div><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#70ea41 0deg,#92ea41 86.4deg,#eef1f5 86.4deg 360deg)"><div class="pct">24%</div></div><div class="lbl">周额度</div><div class="reset">重置 11-10</div></div></div></div></div></div>
+<div style="flex:1"><h3>平板 · 双列 · 限宽居中</h3><div class="tablet"><div class="card"><div class="head"><span class="name">老爹</span><span class="prov">Kimi</span></div>
+    <div class="gauges"><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#70ea41 0deg,#92ea41 86.4deg,#eef1f5 86.4deg 360deg)"><div class="pct">24%</div></div><div class="lbl">5 小时</div><div class="reset">重置 09:36</div></div><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#81ea41 0deg,#a3ea41 104.4deg,#eef1f5 104.4deg 360deg)"><div class="pct">29%</div></div><div class="lbl">本周</div><div class="reset">重置 16:36</div></div></div></div><div class="card"><div class="head"><span class="name">我的</span><span class="prov">DeepSeek · 余额</span></div>
+        <div class="bal"><div class="arc" style="background:conic-gradient(from -90deg,#41ea63 0deg,#41ea41 360.0deg,#eef1f5 360.0deg 360deg)"><div class="pct">100%</div></div>
+        <div><div class="money">¥114.87</div><div class="lbl">按 100 元满偏</div></div></div></div><div class="card"><div class="head"><span class="name">老爹</span><span class="prov">DeepSeek · 余额</span></div>
+        <div class="bal"><div class="arc" style="background:conic-gradient(from -90deg,#59ea41 0deg,#7bea41 298.8deg,#eef1f5 298.8deg 360deg)"><div class="pct">83%</div></div>
+        <div><div class="money">¥82.90</div><div class="lbl">按 100 元满偏</div></div></div></div><div class="card"><div class="head"><span class="name">ChatGPT Plus</span><span class="prov">ChatGPT Plus</span></div>
+    <div class="gauges"><div class="g"><div class="arc" style="background:conic-gradient(#eef1f5 0 360deg)"><div class="pct">0%</div></div><div class="lbl">5 小时</div><div class="reset">重置 13:01</div></div><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#59ea41 0deg,#7bea41 61.2deg,#eef1f5 61.2deg 360deg)"><div class="pct">17%</div></div><div class="lbl">本周</div><div class="reset">重置 11-12</div></div></div></div><div class="card"><div class="head"><span class="name">Gemini</span><span class="prov">Gemini（网页版）</span></div>
+    <div class="gauges"><div class="g"><div class="arc" style="background:conic-gradient(#eef1f5 0 360deg)"><div class="pct">0%</div></div><div class="lbl">5 小时</div><div class="reset">重置 8:37</div></div><div class="g"><div class="arc" style="background:conic-gradient(from -90deg,#70ea41 0deg,#92ea41 86.4deg,#eef1f5 86.4deg 360deg)"><div class="pct">24%</div></div><div class="lbl">周额度</div><div class="reset">重置 11-10</div></div></div></div></div></div>
+</div></body></html>

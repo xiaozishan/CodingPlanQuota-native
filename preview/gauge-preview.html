@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>QuotaGauge 弧形仪表设计预览</title>
+<style>
+  html, body { margin: 0; width: 1600px; height: 1000px; overflow: hidden; background: #efefed; }
+  canvas { display: block; width: 1600px; height: 1000px; }
+</style>
+</head>
+<body>
+<canvas id="preview" width="1600" height="1000"></canvas>
+<script>
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+const C = {
+  bg: '#efefed', screen: '#ffffff', text: '#111111', secondary: '#5a5a5a',
+  muted: '#8c8c8c', border: '#d9d9d9', track: '#f2f2f2', primary: '#111111',
+  warning: '#9a6700', error: '#b3261e'
+};
+
+function font(size, weight = 400) {
+  ctx.font = `${weight} ${size}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+}
+function text(value, x, y, size = 14, color = C.text, align = 'left', weight = 400) {
+  font(size, weight);
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(value, x, y);
+}
+function roundedRect(x, y, w, h, r, fill, stroke = null, lineWidth = 1) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+}
+function line(x1, y1, x2, y2, color = C.border, width = 1) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+}
+function colorFor(pct) {
+  if (pct < 60) return C.primary;
+  if (pct <= 85) return C.warning;
+  return C.error;
+}
+function gauge(cx, cy, r, pct, options = {}) {
+  const start = Math.PI * 0.75;
+  const sweep = Math.PI * 1.5;
+  const capped = Math.max(0, Math.min(100, pct));
+  ctx.lineCap = 'round';
+  ctx.lineWidth = options.balance ? 10 : 9;
+  ctx.strokeStyle = C.track;
+  ctx.beginPath(); ctx.arc(cx, cy, r, start, start + sweep); ctx.stroke();
+  if (capped > 0) {
+    ctx.strokeStyle = colorFor(capped);
+    ctx.beginPath(); ctx.arc(cx, cy, r, start, start + sweep * capped / 100); ctx.stroke();
+  }
+  if (options.balance) {
+    text('¥114.87', cx, cy - 8, 20, C.text, 'center', 600);
+    text('100.0%', cx, cy + 17, 12, C.secondary, 'center', 400);
+  } else {
+    text(`${capped.toFixed(1)}%`, cx, cy + 1, 17, C.text, 'center', 600);
+  }
+}
+function card(x, y, w, h, name, tag) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.035)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+  roundedRect(x, y, w, h, 18, C.screen, C.border, 1);
+  ctx.restore();
+  text(name, x + 20, y + 29, 16, C.text, 'left', 600);
+  text(tag, x + w - 20, y + 29, 11, C.secondary, 'right', 400);
+}
+function dualCard(x, y, w, h, name, tag, first, second) {
+  card(x, y, w, h, name, tag);
+  const centers = [x + w * 0.27, x + w * 0.73];
+  const cy = y + 118;
+  [first, second].forEach((item, i) => {
+    gauge(centers[i], cy, 46, item.pct);
+    text(item.label, centers[i], y + 187, 12, C.text, 'center', 500);
+    text(`重置：${item.reset}`, centers[i], y + 208, 10, C.secondary, 'center');
+  });
+}
+function balanceCard(x, y, w, h, name = 'DeepSeek 主账号') {
+  card(x, y, w, h, name, 'CNY');
+  const cx = x + w / 2;
+  gauge(cx, y + 116, 57, 100, { balance: true });
+  text('余额 · ¥100 满偏', cx, y + 194, 12, C.secondary, 'center');
+  text('含赠送 ¥20.00', cx, y + 216, 10, C.muted, 'center');
+}
+function homeIcon(x, y, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - 9, y); ctx.lineTo(x, y - 8); ctx.lineTo(x + 9, y);
+  ctx.moveTo(x - 6, y - 1); ctx.lineTo(x - 6, y + 9); ctx.lineTo(x + 6, y + 9); ctx.lineTo(x + 6, y - 1);
+  ctx.stroke();
+}
+function settingsIcon(x, y, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9);
+    ctx.lineTo(x + Math.cos(a) * 12, y + Math.sin(a) * 12);
+    ctx.stroke();
+  }
+}
+function fab(cx, cy) {
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.16)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, 25, 0, Math.PI * 2); ctx.fillStyle = C.primary; ctx.fill(); ctx.restore();
+  text('＋', cx, cy - 1, 27, '#ffffff', 'center', 400);
+}
+
+// Preview background and heading.
+ctx.fillStyle = C.bg; ctx.fillRect(0, 0, 1600, 1000);
+text('QuotaGauge · 弧形仪表设计预览', 40, 42, 25, C.text, 'left', 650);
+text('圆头弧线 · 用量分档配色 · DeepSeek 按 100 元满偏', 40, 75, 13, C.secondary);
+text('手机 · <600dp · 单列', 40, 108, 13, C.secondary, 'left', 500);
+text('平板 · ≥600dp · 双列 + NavigationRail', 500, 108, 13, C.secondary, 'left', 500);
+
+// Device screens.
+ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.08)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+roundedRect(40, 130, 400, 800, 28, C.screen, C.border, 1);
+roundedRect(500, 130, 1050, 800, 28, C.screen, C.border, 1);
+ctx.restore();
+
+// Phone top bar.
+text('额度盘', 64, 166, 20, C.text, 'left', 600);
+text('刷新', 350, 166, 12, C.text, 'right', 500);
+text('设置', 414, 166, 12, C.text, 'right', 500);
+line(56, 194, 424, 194, '#eeeeee');
+
+// Phone: one column, two provider types.
+dualCard(64, 214, 352, 260, 'Kimi 工作账号', 'Kimi',
+  { pct: 28.4, label: '5 小时', reset: '今天 20:00' },
+  { pct: 73.8, label: '本周', reset: '11 月 9 日' });
+balanceCard(64, 494, 352, 260);
+fab(392, 866);
+
+// Tablet navigation rail.
+roundedRect(512, 150, 72, 56, 28, C.track);
+homeIcon(548, 166, C.primary);
+text('额度', 548, 192, 11, C.text, 'center', 500);
+settingsIcon(548, 247, C.secondary);
+text('设置', 548, 273, 11, C.secondary, 'center');
+line(600, 130, 600, 930, '#e5e5e5');
+
+// Tablet top bar and centered two-column content.
+text('额度盘', 624, 166, 20, C.text, 'left', 600);
+text('刷新', 1522, 166, 12, C.text, 'right', 500);
+line(616, 194, 1534, 194, '#eeeeee');
+const tabletX = 624, tabletGap = 16, tabletW = 442;
+dualCard(tabletX, 214, tabletW, 260, 'ChatGPT Plus', 'OpenAI',
+  { pct: 42.8, label: '5 小时', reset: '今天 21:00' },
+  { pct: 67.4, label: '本周', reset: '11 月 9 日' });
+dualCard(tabletX + tabletW + tabletGap, 214, tabletW, 260, 'Gemini 网页端', 'Gemini',
+  { pct: 91.2, label: '5 小时窗口', reset: '今天 22:30' },
+  { pct: 38.6, label: '周额度', reset: '11 月 10 日' });
+balanceCard(tabletX, 494, tabletW, 260, 'DeepSeek 主账号');
+dualCard(tabletX + tabletW + tabletGap, 494, tabletW, 260, 'Kimi 工作账号', 'Kimi',
+  { pct: 28.4, label: '5 小时', reset: '今天 20:00' },
+  { pct: 73.8, label: '本周', reset: '11 月 9 日' });
+fab(1498, 866);
+
+// Legend.
+const legendY = 968;
+const legend = [
+  { x: 525, color: C.primary, label: '<60% 主色' },
+  { x: 735, color: C.warning, label: '60–85% 警示' },
+  { x: 960, color: C.error, label: '>85% 错误' }
+];
+legend.forEach(item => {
+  ctx.beginPath(); ctx.arc(item.x, legendY, 5, 0, Math.PI * 2); ctx.fillStyle = item.color; ctx.fill();
+  text(item.label, item.x + 14, legendY, 12, C.secondary);
+});
+</script>
+</body>
+</html>

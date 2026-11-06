@@ -22,6 +22,20 @@ class Prefs(context: Context) {
             sp.edit().putString("theme", value).apply()
         }
 
+    var mergeAccounts: Boolean
+        get() = if (sp.contains("merge_accounts")) {
+            sp.getBoolean("merge_accounts", true)
+        } else {
+            // 0.5.16 的 DeepSeek 专用开关升级为通用的多账号开关。
+            sp.getBoolean("merge_deepseek", true)
+        }
+        set(value) {
+            sp.edit()
+                .putBoolean("merge_accounts", value)
+                .remove("merge_deepseek")
+                .apply()
+        }
+
     fun loadProviders(): List<Provider> {
         val raw = sp.getString("providers", null) ?: return emptyList()
 

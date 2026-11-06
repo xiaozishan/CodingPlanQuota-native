@@ -9,12 +9,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     mode: ThemeMode,
     onModeChange: (ThemeMode) -> Unit,
+    mergeAccounts: Boolean,
+    onMergeAccountsChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -62,9 +65,27 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "黑白单色主题：界面只用明度层次，不含任何色相。",
+                    "界面以黑白单色为主，用量警示与错误状态保留状态色。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(8.dp))
+            Text("首页", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("多账号卡片合并", color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        "同一供应商的账号在同一张卡片中显示；关闭后恢复独立卡片",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = mergeAccounts, onCheckedChange = onMergeAccountsChange)
+            }
             }
         }
     }

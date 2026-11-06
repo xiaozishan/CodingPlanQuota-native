@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppRoot(prefs: Prefs) {
     var mode by rememberSaveable { mutableStateOf(ThemeMode.from(prefs.themeMode)) }
+    var mergeAccounts by rememberSaveable { mutableStateOf(prefs.mergeAccounts) }
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var providers by remember { mutableStateOf(prefs.loadProviders()) }
     var results by remember { mutableStateOf<Map<String, QuotaResult>>(emptyMap()) }
@@ -126,6 +127,7 @@ private fun AppRoot(prefs: Prefs) {
                     onEdit = { screen = Screen.Edit(it) },
                     onSettings = { screen = Screen.Settings },
                     showSettingsAction = !wide,
+                    mergeAccounts = mergeAccounts,
                 )
 
                 is Screen.Edit -> EditScreen(
@@ -151,6 +153,11 @@ private fun AppRoot(prefs: Prefs) {
                     onModeChange = { m ->
                         mode = m
                         prefs.themeMode = m.key
+                    },
+                    mergeAccounts = mergeAccounts,
+                    onMergeAccountsChange = { enabled ->
+                        mergeAccounts = enabled
+                        prefs.mergeAccounts = enabled
                     },
                     onBack = { screen = Screen.Home },
                 )

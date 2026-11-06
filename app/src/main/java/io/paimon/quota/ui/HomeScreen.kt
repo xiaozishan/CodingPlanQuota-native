@@ -1,8 +1,8 @@
-package io.paimon.quota.ui
+﻿package io.paimon.quota.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -35,6 +35,7 @@ fun HomeScreen(
     onEdit: (Provider) -> Unit,
     onSettings: () -> Unit,
     showSettingsAction: Boolean = true,
+    mergeAccounts: Boolean,
 ) {
     var rawJson by remember { mutableStateOf<String?>(null) }
 
@@ -80,33 +81,53 @@ fun HomeScreen(
 
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
             val columns = if (maxWidth >= 600.dp) 2 else 1
             val pagePadding = if (maxWidth >= 600.dp) 24.dp else 16.dp
             val cardSpacing = if (maxWidth >= 600.dp) 16.dp else 12.dp
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
                     .widthIn(max = 1_000.dp)
                     .fillMaxWidth()
                     .fillMaxHeight(),
-                contentPadding = PaddingValues(
-                    start = pagePadding,
-                    top = 8.dp,
-                    end = pagePadding,
-                    bottom = 96.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(cardSpacing),
-                horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                items(providers, key = { it.id }) { p ->
-                    ProviderCard(
-                        p = p,
-                        r = results[p.id],
-                        onClick = { onEdit(p) },
-                        onShowRaw = { rawJson = it },
-                    )
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = pagePadding,
+                        top = 8.dp,
+                        end = pagePadding,
+                        bottom = 96.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(cardSpacing),
+                    horizontalArrangement = Arrangement.spacedBy(cardSpacing),
+                ) {
+                    val cardGroups = if (mergeAccounts) {
+                        providers.groupBy { it.kind }.values.toList()
+                    } else {
+                        providers.map { listOf(it) }
+                    }
+                    items(cardGroups, key = { group -> group.joinToString(":") { it.id } }) { group ->
+                        val p = group.first()
+                        if (group.size > 1) {
+                            MergedProviderCard(
+                                accounts = group,
+                                results = results,
+                                onEdit = onEdit,
+                                onShowRaw = { rawJson = it },
+                            )
+                        } else {
+                            ProviderCard(
+                                p = p,
+                                r = results[p.id],
+                                onClick = { onEdit(p) },
+                                onShowRaw = { rawJson = it },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -114,6 +135,87 @@ fun HomeScreen(
 
     rawJson?.let { raw ->
         RawJsonDialog(raw = raw, onDismiss = { rawJson = null })
+    }
+}
+
+@Composable
+private fun MergedProviderCard(
+    accounts: List<Provider>,
+    results: Map<String, QuotaResult>,
+    onEdit: (Provider) -> Unit,
+    onShowRaw: (String) -> Unit,
+) {
+    val kind = accounts.first().kind
+    val showBalances = kind == ProviderKind.DEEPSEEK || accounts.all {
+        results[it.id]?.balanceAmount != null
+    }
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    kind.label,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "${accounts.size} 个账号" + if (showBalances) " · 余额" else "",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            if (showBalances) {
+                BalanceGaugeGroup(accounts = accounts, results = results, onEdit = onEdit)
+            } else {
+                AccountTierGaugeGrid(accounts = accounts, results = results, onEdit = onEdit)
+                accounts.forEachIndexed { index, provider ->
+                    val r = results[provider.id]
+                    if (r == null || !r.ok || r.tiers.isEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            accountLabel(provider, index),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        ProviderResultContent(
+                            p = provider,
+                            r = r,
+                            onShowRaw = onShowRaw,
+                        )
+                    } else {
+                        if (!r.message.isNullOrBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "${accountLabel(provider, index)} · ${r.message}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        val raw = r.raw?.takeIf { it.isNotEmpty() }
+                        if (provider.kind == ProviderKind.ANTIGRAVITY && raw != null) {
+                            TextButton(
+                                onClick = { onShowRaw(raw) },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                            ) {
+                                Text("${accountLabel(provider, index)} · 查看原始 JSON", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -126,12 +228,12 @@ private fun ProviderCard(
 ) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -150,65 +252,75 @@ private fun ProviderCard(
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
-            when {
-                r == null -> Text(
-                    "尚未查询",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            ProviderResultContent(p = p, r = r, onShowRaw = onShowRaw)
+        }
+    }
+}
 
-                !r.ok -> {
-                    val failure = if (p.kind == ProviderKind.GEMINI) {
-                        when {
-                            r.error?.contains("未登录") == true -> "Gemini 网页端未登录"
-                            r.error?.contains("页面加载失败") == true -> "页面加载失败，请稍后重试"
-                            else -> "未登录或页面未加载"
-                        }
-                    } else {
-                        r.error ?: "未知错误"
-                    }
-                    Text(
-                        "查询失败：$failure",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+@Composable
+private fun ProviderResultContent(
+    p: Provider,
+    r: QuotaResult?,
+    onShowRaw: (String) -> Unit,
+) {
+    when {
+        r == null -> Text(
+            "尚未查询",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        !r.ok -> {
+            val failure = if (p.kind == ProviderKind.GEMINI) {
+                when {
+                    r.error?.contains("未登录") == true -> "Gemini 网页端未登录"
+                    r.error?.contains("页面加载失败") == true -> "页面加载失败，请稍后重试"
+                    else -> "未登录或页面未加载"
                 }
-
-                r.balanceText != null -> Text(
-                    r.balanceText,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-
-                else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    r.tiers.forEach { t ->
-                TierBar(t.label, t.usedPct, t.resetAt, t.valueText)
-                    }
-                }
+            } else {
+                r.error ?: "未知错误"
             }
+            Text(
+                "查询失败：$failure",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
-            if (p.kind != ProviderKind.GEMINI && r != null && r.ok && !r.message.isNullOrBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    r.message,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        r.balanceAmount != null -> BalanceGauge(
+            balance = r.balanceAmount,
+            balanceText = r.balanceText,
+        )
 
-            val raw = r?.raw?.takeIf { it.isNotEmpty() }
-            if (p.kind == ProviderKind.ANTIGRAVITY && raw != null) {
-                Spacer(Modifier.height(4.dp))
-                TextButton(
-                    onClick = { onShowRaw(raw) },
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-                ) {
-                    Text("查看原始 JSON", fontSize = 12.sp)
-                }
-            }
+        r.balanceText != null -> Text(
+            r.balanceText,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+
+        else -> TierGaugeGrid(r.tiers)
+    }
+
+    if (p.kind != ProviderKind.GEMINI && r != null && r.ok && !r.message.isNullOrBlank()) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            r.message,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    val raw = r?.raw?.takeIf { it.isNotEmpty() }
+    if (p.kind == ProviderKind.ANTIGRAVITY && raw != null) {
+        Spacer(Modifier.height(4.dp))
+        TextButton(
+            onClick = { onShowRaw(raw) },
+            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+        ) {
+            Text("查看原始 JSON", fontSize = 12.sp)
         }
     }
 }
@@ -253,37 +365,4 @@ private fun RawJsonDialog(raw: String, onDismiss: () -> Unit) {
     )
 }
 
-@Composable
-private fun TierBar(label: String, usedPct: Double, resetAt: String?, valueText: String?) {
-    Column {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                valueText ?: "${"%.1f".format(usedPct)}%",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        if (valueText == null) {
-            Spacer(Modifier.height(6.dp))
-            Box(
-                Modifier.fillMaxWidth().height(6.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))
-            ) {
-                Box(
-                    Modifier.fillMaxWidth((usedPct / 100.0).toFloat().coerceIn(0f, 1f))
-                        .height(6.dp)
-                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp))
-                )
-            }
-        }
-        if (!resetAt.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "重置：" + resetAt,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
+

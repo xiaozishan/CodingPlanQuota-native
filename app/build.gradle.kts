@@ -12,8 +12,8 @@ android {
         applicationId = "io.paimon.quota"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.5.14"
+        versionCode = 27
+        versionName = "0.5.22"
     }
 
     signingConfigs {
@@ -87,4 +87,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+
+
+
 

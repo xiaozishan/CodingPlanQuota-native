@@ -171,7 +171,7 @@ object QuotaApi {
             append("余额 ").append(sym).append(String.format(Locale.US, "%.2f", total))
             if (granted > 0) append(" · 含赠送 ").append(sym).append(String.format(Locale.US, "%.2f", granted))
         }
-        return QuotaResult(true, balanceText = text)
+        return QuotaResult(true, balanceText = text, balanceAmount = total)
     }
 
     private fun parseKimi(r: HttpResp): QuotaResult {

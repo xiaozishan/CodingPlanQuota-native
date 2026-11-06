@@ -7,7 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-/** 纯黑白单色调色板：只有明度层次，没有色相。 */
+/** 黑白单色界面，仅给用量警示与错误状态保留状态色。 */
 object Mono {
     // 浅色
     val LightBg = Color(0xFFFFFFFF)
@@ -19,6 +19,7 @@ object Mono {
     val LightText3 = Color(0xFF8C8C8C)
     val LightAccent = Color(0xFF111111)
     val LightOnAccent = Color(0xFFFFFFFF)
+    val LightWarning = Color(0xFF9A6700)
 
     // 深色
     val DarkBg = Color(0xFF000000)
@@ -30,11 +31,13 @@ object Mono {
     val DarkText3 = Color(0xFF7A7A7A)
     val DarkAccent = Color(0xFFFFFFFF)
     val DarkOnAccent = Color(0xFF000000)
+    val DarkWarning = Color(0xFFFFC857)
 }
 
 private val LightScheme = lightColorScheme(
     primary = Mono.LightAccent,
     onPrimary = Mono.LightOnAccent,
+    tertiary = Mono.LightWarning,
     secondary = Mono.LightText2,
     onSecondary = Mono.LightBg,
     background = Mono.LightBg,
@@ -50,6 +53,7 @@ private val LightScheme = lightColorScheme(
 private val DarkScheme = darkColorScheme(
     primary = Mono.DarkAccent,
     onPrimary = Mono.DarkOnAccent,
+    tertiary = Mono.DarkWarning,
     secondary = Mono.DarkText2,
     onSecondary = Mono.DarkBg,
     background = Mono.DarkBg,
