@@ -8,6 +8,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -91,7 +92,7 @@ internal fun ChatgptLoginDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.width(72.dp), contentAlignment = Alignment.CenterStart) {
-                        TextButton(onClick = onCancel) { Text("取消") }
+                        TextButton(onClick = onCancel, shape = UiShapes.Control) { Text("取消") }
                     }
                     Text(
                         "OpenAI 登录",
@@ -114,7 +115,11 @@ internal fun ChatgptLoginDialog(
                 )
 
                 (errorMessage ?: localError)?.let { message ->
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = UiShapes.Panel,
+                        border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -127,6 +132,7 @@ internal fun ChatgptLoginDialog(
                             )
                             TextButton(
                                 enabled = !busy,
+                                shape = UiShapes.Control,
                                 onClick = {
                                     onRetry()
                                     localError = null

@@ -3,6 +3,7 @@ package io.paimon.quota.data.provider
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -32,9 +33,18 @@ import kotlin.coroutines.resumeWithException
 @SuppressLint("SetJavaScriptEnabled")
 internal object GeminiWebQuota {
     private const val USAGE_URL = "https://gemini.google.com/usage"
+    private const val SUCCESS_CACHE_TTL_MS = 5 * 60 * 1000L
     private val CURRENT_USAGE_HEADING = Regex("当前用量|current\\s+usage", RegexOption.IGNORE_CASE)
     private val WEEKLY_LIMIT_HEADING = Regex("每周限额|weekly\\s+limit", RegexOption.IGNORE_CASE)
     private val mutex = Mutex()
+
+    private data class SuccessfulCache(
+        val result: QuotaResult,
+        val storedAt: Long,
+    )
+
+    @Volatile
+    private var successfulCache: SuccessfulCache? = null
 
     @Volatile
     private var appContext: Context? = null
@@ -71,7 +81,12 @@ internal object GeminiWebQuota {
     }
 
     suspend fun fetch(): QuotaResult = mutex.withLock {
-        try {
+        val now = SystemClock.elapsedRealtime()
+        successfulCache
+            ?.takeIf { now - it.storedAt in 0 until SUCCESS_CACHE_TTL_MS }
+            ?.let { return@withLock it.result }
+
+        val result = try {
             withContext(Dispatchers.Main) {
                 val view = getOrCreateWebView()
                 CookieManager.getInstance().flush()
@@ -103,6 +118,10 @@ internal object GeminiWebQuota {
         } catch (e: Exception) {
             QuotaResult(false, error = "页面加载失败，请稍后重试")
         }
+        if (result.ok) {
+            successfulCache = SuccessfulCache(result, SystemClock.elapsedRealtime())
+        }
+        result
     }
 
     private suspend fun loadGemini(view: WebView) = suspendCancellableCoroutine<Unit> { continuation ->

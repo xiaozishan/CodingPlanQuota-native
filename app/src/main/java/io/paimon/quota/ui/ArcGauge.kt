@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -77,12 +78,14 @@ fun AccountTierGaugeGrid(
     onEdit: (Provider) -> Unit,
 ) {
     // 同一指标下不同账号并排，例如第一行是号①/号②的 5 小时，第二行是本周。
-    val maxTierCount = accounts.maxOfOrNull { results[it.id]?.tiers?.size ?: 0 } ?: 0
-    val entries = buildList {
-        for (tierIndex in 0 until maxTierCount) {
-            accounts.forEachIndexed { accountIndex, provider ->
-                results[provider.id]?.tiers?.getOrNull(tierIndex)?.let { tier ->
-                    add(AccountTier(provider, accountIndex, tier))
+    val entries = remember(accounts, results) {
+        val maxTierCount = accounts.maxOfOrNull { results[it.id]?.tiers?.size ?: 0 } ?: 0
+        buildList {
+            for (tierIndex in 0 until maxTierCount) {
+                accounts.forEachIndexed { accountIndex, provider ->
+                    results[provider.id]?.tiers?.getOrNull(tierIndex)?.let { tier ->
+                        add(AccountTier(provider, accountIndex, tier))
+                    }
                 }
             }
         }

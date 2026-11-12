@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +25,7 @@ import io.paimon.quota.data.provider.AuthSession
 import io.paimon.quota.data.provider.ChatgptPlusProvider
 import io.paimon.quota.data.provider.GeminiProvider
 import io.paimon.quota.data.provider.GeminiWebQuota
+import io.paimon.quota.data.provider.QwenCloudIndividualProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -63,13 +65,17 @@ private fun fieldsFor(kind: ProviderKind): List<ExtraField> = when (kind) {
         ExtraField("cookie", "Cookie（模式②直连）", secret = true),
     )
 
+    ProviderKind.QWEN_CLOUD_INDIVIDUAL -> listOf(
+        ExtraField("cookie", "Qwen Cloud Cookie", secret = true, multiline = true),
+    )
+
     else -> emptyList()
 }
 
 /** 主凭据字段是否显示 */
 private fun showsMainKey(kind: ProviderKind): Boolean = when (kind) {
     ProviderKind.CHATGPT_PLUS, ProviderKind.VOLCENGINE, ProviderKind.MIMO,
-    ProviderKind.ANTIGRAVITY -> false
+    ProviderKind.ANTIGRAVITY, ProviderKind.QWEN_CLOUD_INDIVIDUAL -> false
     else -> true
 }
 
@@ -78,6 +84,7 @@ private fun tokenLabel(kind: ProviderKind): String = when (kind) {
     ProviderKind.ANTHROPIC -> "Claude OAuth access_token"
     ProviderKind.GEMINI -> "Google OAuth access_token（可留空，推荐下方登录）"
     ProviderKind.CODEX_FEELOL -> "feelol token"
+    ProviderKind.GITHUB_COPILOT -> "GitHub Copilot OAuth token"
     else -> "API Key"
 }
 
@@ -99,6 +106,10 @@ private fun hintText(kind: ProviderKind): String = when (kind) {
     ProviderKind.CODEX_FEELOL -> "第三方中转 feea.lol，实验性支持。"
     ProviderKind.CHATGPT_PLUS -> "主路径使用 OpenAI OAuth + PKCE 登录并查询用量；旧版手贴 Session JSON 仍可按续费日显示倒计时。"
     ProviderKind.MIMO -> "两种模式二选一：后端地址 + Token，或直连 Cookie。"
+    ProviderKind.GITHUB_COPILOT ->
+        "粘贴 Copilot 登录使用的 GitHub OAuth token（通常以 ghu_ 开头）；查询 api.github.com/copilot_internal/user 的 Premium requests 余额。内部接口可能变动。"
+    ProviderKind.QWEN_CLOUD_INDIVIDUAL ->
+        "仅支持国际站 Qwen Cloud Individual。登录套餐页后，在浏览器开发者工具 Network 中复制 qwencloud.com 请求的完整 Cookie 头。推理 API Key 不能查额度；Cookie 加密保存，只发往 qwencloud.com。"
     ProviderKind.CUSTOM -> "地址返回 JSON 时优先读 used_pct，否则显示原始返回片段。"
     else -> "凭据只保存在本机，用 Android Keystore 加密（AES-256-GCM）。"
 }
@@ -229,10 +240,13 @@ fun EditScreen(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
                 ),
-                navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
+                navigationIcon = {
+                    TextButton(onClick = onBack, shape = UiShapes.Control) { Text("返回") }
+                },
                 actions = {
                     TextButton(
                         enabled = !loginBusy,
+                        shape = UiShapes.Control,
                         onClick = {
                             onSave(
                                 Provider(
@@ -275,6 +289,7 @@ fun EditScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
+                shape = UiShapes.Panel,
                 label = { Text("名称（可留空）") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -284,6 +299,7 @@ fun EditScreen(
                 OutlinedTextField(
                     value = keyText,
                     onValueChange = { keyText = it },
+                    shape = UiShapes.Panel,
                     label = { Text(tokenLabel(kind)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
@@ -291,9 +307,33 @@ fun EditScreen(
                 )
             }
 
+            if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL) {
+                OutlinedButton(
+                    shape = UiShapes.Control,
+                    border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
+                    onClick = {
+                        try {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(QwenCloudIndividualProvider.DASHBOARD_URL),
+                                )
+                            )
+                        } catch (_: ActivityNotFoundException) {
+                            loginError = "没有找到可打开千问套餐页的浏览器"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("打开 Individual 套餐页") }
+                loginError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+
             if (kind == ProviderKind.ANTIGRAVITY || kind == ProviderKind.GEMINI) {
                 Button(
                     enabled = !loginBusy,
+                    shape = UiShapes.Control,
                     onClick = {
                         loginError = null
                         manualLogin = false
@@ -316,6 +356,7 @@ fun EditScreen(
 
                 TextButton(
                     enabled = !loginBusy,
+                    shape = UiShapes.Control,
                     onClick = {
                         val session = if (kind == ProviderKind.GEMINI) {
                             GeminiProvider.buildAuthUrl()
@@ -372,6 +413,8 @@ fun EditScreen(
                     }
                     OutlinedButton(
                         enabled = !loginBusy,
+                        shape = UiShapes.Control,
+                        border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
                         onClick = {
                             keyText = ""
                             listOf("accessToken", "refresh_token", "expiresAt", "email").forEach(extras::remove)
@@ -394,6 +437,7 @@ fun EditScreen(
             if (kind == ProviderKind.CHATGPT_PLUS) {
                 Button(
                     enabled = !loginBusy,
+                    shape = UiShapes.Control,
                     onClick = {
                         loginError = null
                         chatGptAuthSession = ChatgptPlusProvider.buildAuthUrl()
@@ -422,6 +466,7 @@ fun EditScreen(
                 OutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
+                    shape = UiShapes.Panel,
                     label = { Text(if (kind == ProviderKind.ZENMUX) "额度端点 URL" else "接口地址（返回 JSON）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -433,6 +478,7 @@ fun EditScreen(
                 OutlinedTextField(
                     value = v,
                     onValueChange = { extras[f.key] = it },
+                    shape = UiShapes.Panel,
                     label = { Text(f.label) },
                     singleLine = !f.multiline,
                     minLines = if (f.multiline) 4 else 1,
@@ -449,7 +495,12 @@ fun EditScreen(
 
             if (existing != null && onDelete != null) {
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { onDelete(existing) }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { onDelete(existing) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = UiShapes.Control,
+                    border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
+                ) {
                     Text("删除这个供应商")
                 }
             }
@@ -518,6 +569,7 @@ private fun ManualCallbackDialog(
 
     AlertDialog(
         onDismissRequest = onCancel,
+        shape = UiShapes.Card,
         properties = DialogProperties(dismissOnBackPress = false),
         title = { Text("手动完成 Google 登录") },
         text = {
@@ -528,12 +580,17 @@ private fun ManualCallbackDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onOpenBrowser) { Text("打开授权页", fontSize = 12.sp) }
-                    TextButton(onClick = onCopyUrl) { Text("复制授权链接", fontSize = 12.sp) }
+                    TextButton(onClick = onOpenBrowser, shape = UiShapes.Control) {
+                        Text("打开授权页", fontSize = 12.sp)
+                    }
+                    TextButton(onClick = onCopyUrl, shape = UiShapes.Control) {
+                        Text("复制授权链接", fontSize = 12.sp)
+                    }
                 }
                 OutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
+                    shape = UiShapes.Panel,
                     label = { Text("完整回调链接") },
                     minLines = 3,
                     maxLines = 5,
@@ -546,11 +603,17 @@ private fun ManualCallbackDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = !busy && value.isNotBlank(), onClick = onSubmit) {
+            TextButton(
+                enabled = !busy && value.isNotBlank(),
+                onClick = onSubmit,
+                shape = UiShapes.Control,
+            ) {
                 Text(if (busy) "正在登录…" else "完成登录")
             }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } },
+        dismissButton = {
+            TextButton(onClick = onCancel, shape = UiShapes.Control) { Text("取消") }
+        },
     )
 }
 
@@ -567,6 +630,7 @@ private fun <T> ChipRows(
                 FilterChip(
                     selected = o == selected,
                     onClick = { onSelect(o) },
+                    shape = UiShapes.Control,
                     label = { Text(label(o), maxLines = 1, fontSize = 12.sp) },
                 )
             }

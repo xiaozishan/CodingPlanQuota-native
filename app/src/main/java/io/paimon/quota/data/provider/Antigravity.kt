@@ -369,7 +369,10 @@ internal object AntigravityProvider {
 
     /** 把 reset_time 解析成毫秒时间戳；解析不了就返回 null。 */
     private fun resetEpoch(o: Any?): Long? {
-        val raw = toStr(o) ?: return null
+        val raw = toStr(o)?.trim() ?: return null
+        raw.toLongOrNull()?.let { epoch ->
+            return if (epoch < 10_000_000_000L) epoch * 1000 else epoch
+        }
         return runCatching { java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli() }
             .recoverCatching { java.time.Instant.parse(raw).toEpochMilli() }
             .getOrNull()
@@ -377,21 +380,14 @@ internal object AntigravityProvider {
 
     private data class Bucket(val model: String, val usedPct: Double, val resetText: String?, val resetMs: Long?)
 
-    private enum class QuotaWindow { CURRENT, WEEKLY }
-
     /**
-     * buckets 是按模型给的，但用户真正关心的是「5 小时窗口」和「本周窗口」这两条线。
-     * 优先使用响应里的显式窗口类型，否则按 reset_time 远近归组；汇总取该窗口内最紧的那个。
+     * 同一模型族的额度共用池：界面只展示 Claude / Gemini 两条，取池内最保守的已用量。
      */
     private fun parseBuckets(body: JSONObject): List<Tier> {
         val arr = body.optJSONArray("buckets")
             ?: body.optJSONObject("result")?.optJSONArray("buckets")
             ?: return emptyList()
-        val now = System.currentTimeMillis()
-        val windowMs = 6L * 60L * 60L * 1000L
-        val fiveHour = mutableListOf<Bucket>()
-        val weekly = mutableListOf<Bucket>()
-        val details = mutableListOf<Tier>()
+        val buckets = mutableListOf<Bucket>()
 
         for (i in 0 until arr.length()) {
             val item = arr.optJSONObject(i) ?: continue
@@ -403,70 +399,48 @@ internal object AntigravityProvider {
             val resetMs = resetEpoch(item.opt("reset_time")) ?: resetEpoch(item.opt("resetTime"))
             val reset = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
             val used = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0)
-            val bucket = Bucket(model, used, reset, resetMs)
-            when (explicitQuotaWindow(item)) {
-                QuotaWindow.CURRENT -> fiveHour.add(bucket)
-                QuotaWindow.WEEKLY -> weekly.add(bucket)
-                null -> if (resetMs != null && resetMs - now <= windowMs) {
-                    fiveHour.add(bucket)
-                } else {
-                    weekly.add(bucket)
-                }
-            }
-            details.add(Tier(model, used, reset))
+            buckets.add(Bucket(model, used, reset, resetMs))
         }
-
-        fun summarize(label: String, group: List<Bucket>): Tier? {
-            if (group.isEmpty()) return null
-            val worst = group.maxByOrNull { it.usedPct } ?: return null
-            val earliest = group.mapNotNull { it.resetMs }.minOrNull()
-            val resetLabel = group.firstOrNull { it.resetMs == earliest }?.resetText
-                ?: worst.resetText
-            return Tier(label, worst.usedPct, resetLabel)
-        }
-
-        val summary = listOfNotNull(
-            summarize("5 小时窗口", fiveHour),
-            summarize("本周窗口", weekly),
-        )
-        return summary + details
+        return poolTiers(buckets)
     }
 
-    /** 响应若直接给窗口类型就优先使用；没有可识别的类型时才按 reset_time 推断。 */
-    private fun explicitQuotaWindow(item: JSONObject): QuotaWindow? {
-        val keys = listOf("quotaWindow", "quota_window", "windowType", "window_type")
-        for (key in keys) {
-            val value = item.opt(key)
-            val raw = when (value) {
-                is JSONObject -> listOf("type", "name", "id", "window").firstNotNullOfOrNull { field ->
-                    toStr(value.opt(field))?.takeIf { it.isNotBlank() }
-                }
-
-                else -> toStr(value)
-            } ?: continue
-            val normalized = raw.uppercase(Locale.US).replace(Regex("[^A-Z0-9]+"), "_")
+    private fun poolTiers(buckets: List<Bucket>): List<Tier> {
+        val claude = mutableListOf<Bucket>()
+        val gemini = mutableListOf<Bucket>()
+        buckets.forEach { bucket ->
+            val model = bucket.model.lowercase(Locale.US)
             when {
-                normalized.contains("WEEK") || normalized.contains("SEVEN_DAY") ||
-                    normalized.contains("7_DAY") || normalized.contains("168_HOUR") -> return QuotaWindow.WEEKLY
-
-                normalized.contains("FIVE_HOUR") || normalized.contains("5_HOUR") ||
-                    normalized == "5H" || normalized.contains("300_MIN") -> return QuotaWindow.CURRENT
+                "claude" in model -> claude.add(bucket)
+                "gemini" in model -> gemini.add(bucket)
             }
         }
-        return null
+        return listOfNotNull(
+            summarizePool("Claude 池", claude),
+            summarizePool("Gemini 池", gemini),
+        )
+    }
+
+    private fun summarizePool(label: String, group: List<Bucket>): Tier? {
+        if (group.isEmpty()) return null
+        val worst = group.maxByOrNull { it.usedPct } ?: return null
+        val earliest = group.mapNotNull { it.resetMs }.minOrNull()
+        val resetLabel = earliest?.let { earliestMs ->
+            group.firstOrNull { it.resetMs == earliestMs }?.resetText
+        } ?: worst.resetText
+        return Tier(label, worst.usedPct, resetLabel)
     }
 
     /** 兼容 models 映射、models 数组及按 provider 分组的嵌套响应。 */
     private fun parseAvailableModels(body: JSONObject): List<Tier> {
-        val tiers = mutableListOf<Tier>()
-        collectModelQuotas(body, null, tiers, 0)
-        return tiers.distinctBy { Triple(it.label, it.usedPct, it.resetAt) }
+        val buckets = mutableListOf<Bucket>()
+        collectModelQuotas(body, null, buckets, 0)
+        return poolTiers(buckets)
     }
 
     private fun collectModelQuotas(
         node: Any?,
         labelHint: String?,
-        out: MutableList<Tier>,
+        out: MutableList<Bucket>,
         depth: Int,
     ) {
         if (depth > 12) return
@@ -474,8 +448,8 @@ internal object AntigravityProvider {
             is JSONObject -> {
                 val nestedQuota = node.optJSONObject("quotaInfo") ?: node.optJSONObject("quota_info")
                 when {
-                    nestedQuota != null -> addModelTier(node, nestedQuota, labelHint, out)
-                    remainingFraction(node) != null -> addModelTier(node, node, labelHint, out)
+                    nestedQuota != null -> addModelBucket(node, nestedQuota, labelHint, out)
+                    remainingFraction(node) != null -> addModelBucket(node, node, labelHint, out)
                 }
                 val keys = node.keys()
                 while (keys.hasNext()) {
@@ -495,24 +469,25 @@ internal object AntigravityProvider {
         }
     }
 
-    private fun addModelTier(
+    private fun addModelBucket(
         model: JSONObject,
         quota: JSONObject,
         labelHint: String?,
-        out: MutableList<Tier>,
+        out: MutableList<Bucket>,
     ) {
         val fraction = remainingFraction(quota) ?: remainingFraction(model) ?: return
         val label = modelLabel(model) ?: modelLabel(quota) ?: labelHint ?: "额度"
         val reset = resetText(quota.opt("resetTime")) ?: resetText(quota.opt("reset_time"))
             ?: resetText(model.opt("resetTime")) ?: resetText(model.opt("reset_time"))
-        out.add(Tier(label, ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0), reset))
+        val resetMs = resetEpoch(quota.opt("resetTime")) ?: resetEpoch(quota.opt("reset_time"))
+            ?: resetEpoch(model.opt("resetTime")) ?: resetEpoch(model.opt("reset_time"))
+        out.add(Bucket(label, ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0), reset, resetMs))
     }
 
     private fun modelLabel(o: JSONObject): String? =
         toStr(o.opt("model_id"))?.takeIf { it.isNotBlank() }
             ?: toStr(o.opt("modelId"))?.takeIf { it.isNotBlank() }
             ?: toStr(o.opt("model"))?.takeIf { it.isNotBlank() }
-            ?: toStr(o.opt("displayName"))?.takeIf { it.isNotBlank() }
 
     private fun remainingFraction(o: JSONObject): Double? {
         val direct = toDouble(o.opt("remaining_fraction")) ?: toDouble(o.opt("remainingFraction"))

@@ -4,8 +4,10 @@ import io.paimon.quota.data.provider.AntigravityProvider
 import io.paimon.quota.data.provider.ChatgptPlusProvider
 import io.paimon.quota.data.provider.CodexFeelolProvider
 import io.paimon.quota.data.provider.GeminiProvider
+import io.paimon.quota.data.provider.GitHubCopilotProvider
 import io.paimon.quota.data.provider.MimoProvider
 import io.paimon.quota.data.provider.OpencodeGoProvider
+import io.paimon.quota.data.provider.QwenCloudIndividualProvider
 import io.paimon.quota.data.provider.VolcengineProvider
 import io.paimon.quota.data.provider.ZenmuxProvider
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,7 @@ object QuotaApi {
             p.kind != ProviderKind.CHATGPT_PLUS &&
             p.kind != ProviderKind.GEMINI &&
             p.kind != ProviderKind.MIMO &&
+            p.kind != ProviderKind.QWEN_CLOUD_INDIVIDUAL &&
             p.token.isBlank()
         ) {
             return@withContext QuotaResult(false, error = "还没填凭据")
@@ -63,6 +66,8 @@ object QuotaApi {
                 ProviderKind.MIMO -> MimoProvider.fetch(p)
                 ProviderKind.GEMINI -> GeminiProvider.fetch(p, onProviderUpdated)
                 ProviderKind.ANTIGRAVITY -> AntigravityProvider.fetch(p, onProviderUpdated)
+                ProviderKind.GITHUB_COPILOT -> GitHubCopilotProvider.fetch(p)
+                ProviderKind.QWEN_CLOUD_INDIVIDUAL -> QwenCloudIndividualProvider.fetch(p)
 
                 ProviderKind.CODEX -> parseCodex(
                     Http.get(

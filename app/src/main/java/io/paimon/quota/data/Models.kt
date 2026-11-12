@@ -1,5 +1,7 @@
 package io.paimon.quota.data
 
+import androidx.compose.runtime.Immutable
+
 /**
  * 供应商类型（对应原 uni-app 版的 kind）。
  *
@@ -24,10 +26,13 @@ enum class ProviderKind(
     ANTHROPIC("Claude"),
     GEMINI("Gemini（网页版）"),
     ANTIGRAVITY("Antigravity"),
+    GITHUB_COPILOT("GitHub Copilot"),
     CUSTOM("自定义 JSON", needsBaseUrl = true),
+    QWEN_CLOUD_INDIVIDUAL("千问 Coding Plan Individual"),
 }
 
 /** 一个已保存的供应商配置 */
+@Immutable
 data class Provider(
     val id: String,
     val kind: ProviderKind,
@@ -40,6 +45,7 @@ data class Provider(
 )
 
 /** 单个额度窗口 */
+@Immutable
 data class Tier(
     val label: String,
     val usedPct: Double,
@@ -49,6 +55,7 @@ data class Tier(
 )
 
 /** 一次查询结果 */
+@Immutable
 data class QuotaResult(
     val ok: Boolean,
     val tiers: List<Tier> = emptyList(),

@@ -18,6 +18,10 @@ fun SettingsScreen(
     onModeChange: (ThemeMode) -> Unit,
     mergeAccounts: Boolean,
     onMergeAccountsChange: (Boolean) -> Unit,
+    autoRefreshEnabled: Boolean,
+    onAutoRefreshEnabledChange: (Boolean) -> Unit,
+    autoRefreshIntervalSeconds: Int,
+    onAutoRefreshIntervalChange: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -31,7 +35,9 @@ fun SettingsScreen(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
                 ),
-                navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
+                navigationIcon = {
+                    TextButton(onClick = onBack, shape = UiShapes.Control) { Text("返回") }
+                },
             )
         },
     ) { padding ->
@@ -71,6 +77,48 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(8.dp))
+            Text("自动刷新", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("前台自动刷新", color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        "回到前台立即刷新，并按设定间隔刷新；退到后台自动停止",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = autoRefreshEnabled, onCheckedChange = onAutoRefreshEnabledChange)
+            }
+            if (autoRefreshEnabled) {
+                Text(
+                    "刷新间隔",
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                autoRefreshIntervals.forEach { (seconds, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = autoRefreshIntervalSeconds == seconds,
+                            onClick = { onAutoRefreshIntervalChange(seconds) },
+                        )
+                        Text(
+                            label,
+                            modifier = Modifier.padding(start = 8.dp),
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(8.dp))
             Text("首页", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -90,3 +138,11 @@ fun SettingsScreen(
         }
     }
 }
+
+private val autoRefreshIntervals = listOf(
+    30 to "30 秒",
+    60 to "60 秒（默认）",
+    120 to "2 分钟",
+    300 to "5 分钟",
+    600 to "10 分钟",
+)

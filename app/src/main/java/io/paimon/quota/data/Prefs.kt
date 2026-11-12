@@ -4,6 +4,8 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val QUOTA_RESULTS_CACHE = "quota_results_v1"
+
 /**
  * 本地存储：主题模式、供应商配置、上次查询结果缓存。
  *
@@ -33,6 +35,20 @@ class Prefs(context: Context) {
             sp.edit()
                 .putBoolean("merge_accounts", value)
                 .remove("merge_deepseek")
+                .apply()
+        }
+
+    var autoRefreshEnabled: Boolean
+        get() = sp.getBoolean("auto_refresh_enabled", true)
+        set(value) {
+            sp.edit().putBoolean("auto_refresh_enabled", value).apply()
+        }
+
+    var autoRefreshIntervalSeconds: Int
+        get() = sp.getInt("auto_refresh_interval_seconds", 60).coerceIn(5, 86_400)
+        set(value) {
+            sp.edit()
+                .putInt("auto_refresh_interval_seconds", value.coerceIn(5, 86_400))
                 .apply()
         }
 
@@ -110,4 +126,89 @@ class Prefs(context: Context) {
     }
 
     fun getCache(id: String): String? = sp.getString("cache:$id", null)
+
+    /** 同步读取上次成功结果；只访问 SharedPreferences，不触碰网络。 */
+    fun loadQuotaResults(): Map<String, QuotaResult> =
+        QuotaResultCache.decode(getCache(QUOTA_RESULTS_CACHE))
+
+    /** 仅保存成功结果；apply 异步落盘，不阻塞逐卡刷新。 */
+    fun saveQuotaResults(results: Map<String, QuotaResult>) {
+        putCache(QUOTA_RESULTS_CACHE, QuotaResultCache.encode(results))
+    }
+}
+
+/** 额度结果的轻量 JSON 编解码；原始响应可能很大或含敏感信息，不写入启动缓存。 */
+internal object QuotaResultCache {
+    fun decode(raw: String?): Map<String, QuotaResult> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return runCatching {
+            val root = JSONObject(raw)
+            buildMap<String, QuotaResult> {
+                root.keys().forEach { id ->
+                    if (id.isBlank()) return@forEach
+                    val item = root.optJSONObject(id) ?: return@forEach
+                    if (!item.optBoolean("ok", false)) return@forEach
+                    val tiers = item.optJSONArray("tiers")?.let { array ->
+                        (0 until array.length()).mapNotNull { index ->
+                            val tier = array.optJSONObject(index) ?: return@mapNotNull null
+                            val label = tier.optString("label")
+                            if (label.isBlank()) return@mapNotNull null
+                            Tier(
+                                label = label,
+                                usedPct = tier.optDouble("usedPct", 0.0)
+                                    .takeIf { it.isFinite() } ?: 0.0,
+                                resetAt = tier.optionalString("resetAt"),
+                                valueText = tier.optionalString("valueText"),
+                            )
+                        }
+                    }.orEmpty()
+                    put(
+                        id,
+                        QuotaResult(
+                            ok = true,
+                            tiers = tiers,
+                            balanceText = item.optionalString("balanceText"),
+                            balanceAmount = item.optionalDouble("balanceAmount"),
+                            message = item.optionalString("message"),
+                            at = item.optLong("at", 0L),
+                        ),
+                    )
+                }
+            }
+        }.getOrDefault(emptyMap())
+    }
+
+    fun encode(results: Map<String, QuotaResult>): String {
+        val root = JSONObject()
+        results.forEach { (id, result) ->
+            if (id.isBlank() || !result.ok) return@forEach
+            val tiers = JSONArray()
+            result.tiers.forEach { tier ->
+                tiers.put(
+                    JSONObject()
+                        .put("label", tier.label)
+                        .put("usedPct", tier.usedPct.takeIf { it.isFinite() } ?: 0.0)
+                        .put("resetAt", tier.resetAt)
+                        .put("valueText", tier.valueText)
+                )
+            }
+            val item = JSONObject()
+                .put("ok", true)
+                .put("tiers", tiers)
+                .put("balanceText", result.balanceText)
+                .put("message", result.message)
+                .put("at", result.at)
+            result.balanceAmount?.takeIf { it.isFinite() }?.let {
+                item.put("balanceAmount", it)
+            }
+            root.put(id, item)
+        }
+        return root.toString()
+    }
+
+    private fun JSONObject.optionalString(name: String): String? =
+        if (has(name) && !isNull(name)) optString(name) else null
+
+    private fun JSONObject.optionalDouble(name: String): Double? =
+        if (has(name) && !isNull(name)) optDouble(name).takeIf { it.isFinite() } else null
 }

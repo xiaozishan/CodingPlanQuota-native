@@ -29,8 +29,8 @@ internal object Http {
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             instanceFollowRedirects = true
-            connectTimeout = 15000
-            readTimeout = 25000
+            connectTimeout = 6000
+            readTimeout = 8000
             headers.forEach { (k, v) -> setRequestProperty(k, v) }
             if (headers.keys.none { it.equals("Accept", true) }) {
                 setRequestProperty("Accept", "application/json")

@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -38,6 +37,13 @@ fun HomeScreen(
     mergeAccounts: Boolean,
 ) {
     var rawJson by remember { mutableStateOf<String?>(null) }
+    val cardGroups = remember(providers, mergeAccounts) {
+        if (mergeAccounts) {
+            providers.groupBy { it.kind }.values.toList()
+        } else {
+            providers.map { listOf(it) }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -49,11 +55,11 @@ fun HomeScreen(
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
                 ),
                 actions = {
-                    TextButton(onClick = onRefresh, enabled = !loading) {
+                    TextButton(onClick = onRefresh, enabled = !loading, shape = UiShapes.Control) {
                         Text(if (loading) "刷新中" else "刷新")
                     }
                     if (showSettingsAction) {
-                        TextButton(onClick = onSettings) { Text("设置") }
+                        TextButton(onClick = onSettings, shape = UiShapes.Control) { Text("设置") }
                     }
                 },
             )
@@ -61,6 +67,7 @@ fun HomeScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAdd,
+                shape = UiShapes.Card,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ) { Text("＋", fontSize = 24.sp) }
@@ -105,11 +112,6 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(cardSpacing),
                     horizontalArrangement = Arrangement.spacedBy(cardSpacing),
                 ) {
-                    val cardGroups = if (mergeAccounts) {
-                        providers.groupBy { it.kind }.values.toList()
-                    } else {
-                        providers.map { listOf(it) }
-                    }
                     items(cardGroups, key = { group -> group.joinToString(":") { it.id } }) { group ->
                         val p = group.first()
                         if (group.size > 1) {
@@ -150,9 +152,9 @@ private fun MergedProviderCard(
         results[it.id]?.balanceAmount != null
     }
     Card(
-        shape = RoundedCornerShape(14.dp),
+        shape = UiShapes.Card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
@@ -207,6 +209,7 @@ private fun MergedProviderCard(
                         if (provider.kind == ProviderKind.ANTIGRAVITY && raw != null) {
                             TextButton(
                                 onClick = { onShowRaw(raw) },
+                                shape = UiShapes.Control,
                                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
                             ) {
                                 Text("${accountLabel(provider, index)} · 查看原始 JSON", fontSize = 11.sp)
@@ -228,9 +231,9 @@ private fun ProviderCard(
 ) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = UiShapes.Card,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
@@ -318,6 +321,7 @@ private fun ProviderResultContent(
         Spacer(Modifier.height(4.dp))
         TextButton(
             onClick = { onShowRaw(raw) },
+            shape = UiShapes.Control,
             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
         ) {
             Text("查看原始 JSON", fontSize = 12.sp)
@@ -327,18 +331,22 @@ private fun ProviderResultContent(
 
 @Composable
 private fun RawJsonDialog(raw: String, onDismiss: () -> Unit) {
-    val knownEndpoints = listOf("retrieveUserQuota", "fetchAvailableModels", "loadCodeAssist")
-    val lines = raw.lineSequence().toList()
-    val endpoints = knownEndpoints.filter { name -> lines.any { it == "$name:" } }
-    val endpointText = endpoints.joinToString(" / ").ifBlank { "Antigravity" }
+    val endpointText = remember(raw) {
+        val knownEndpoints = listOf("retrieveUserQuota", "fetchAvailableModels", "loadCodeAssist")
+        val lines = raw.lineSequence().toList()
+        knownEndpoints.filter { name -> lines.any { it == "$name:" } }
+            .joinToString(" / ")
+            .ifBlank { "Antigravity" }
+    }
 
     BackHandler(onBack = onDismiss)
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = UiShapes.Card,
         properties = DialogProperties(dismissOnBackPress = false),
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss, shape = UiShapes.Control) { Text("关闭") }
         },
         title = {
             Text(
