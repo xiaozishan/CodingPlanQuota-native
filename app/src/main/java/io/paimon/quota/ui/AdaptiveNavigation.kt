@@ -63,7 +63,15 @@ fun QuotaBottomDock(
             color = DockBarColor,
             contentColor = DockTextColor,
             shadowElevation = 0.dp,
-            border = BorderStroke(0.6.dp, Color(0x0F000000)),
+            border = BorderStroke(
+                1.dp,
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.95f),
+                    0.45f to Color.White.copy(alpha = 0.35f),
+                    0.75f to Color(0x12000000),
+                    1f to Color(0x33000000),
+                ),
+            ),
         ) {
             Row(
                 Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -112,7 +120,15 @@ fun QuotaSideDock(
             color = DockBarColor,
             contentColor = DockTextColor,
             shadowElevation = 0.dp,
-            border = BorderStroke(0.6.dp, Color(0x0F000000)),
+            border = BorderStroke(
+                1.dp,
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.95f),
+                    0.45f to Color.White.copy(alpha = 0.35f),
+                    0.75f to Color(0x12000000),
+                    1f to Color(0x33000000),
+                ),
+            ),
         ) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 12.dp),
@@ -210,4 +226,5 @@ private fun DockAddButton(onClick: () -> Unit) {
         }
     }
 }
+
 
