@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 import io.paimon.quota.data.Prefs
 import io.paimon.quota.data.Provider
 import io.paimon.quota.data.ProviderKind
@@ -179,6 +181,7 @@ private fun AppRoot(prefs: Prefs) {
     QuotaTheme(mode) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
+                val hazeState = remember { HazeState() }
                 val sideDock = maxWidth >= 600.dp
                 val selectedDestination = if (screen == Screen.Settings) {
                     QuotaDestination.SETTINGS
@@ -200,6 +203,7 @@ private fun AppRoot(prefs: Prefs) {
                     bottomBar = {
                         if (!sideDock) {
                             QuotaBottomDock(
+                                hazeState = hazeState,
                                 selected = selectedDestination,
                                 onSelect = onDestinationSelect,
                                 onAdd = { showAddSheet = true },
@@ -211,13 +215,20 @@ private fun AppRoot(prefs: Prefs) {
                     Row(Modifier.fillMaxSize()) {
                         if (sideDock) {
                             QuotaSideDock(
+                                hazeState = hazeState,
                                 selected = selectedDestination,
                                 onSelect = onDestinationSelect,
                                 onAdd = { showAddSheet = true },
                             )
                         }
 
-                        Box(Modifier.weight(1f).fillMaxHeight()) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                // Dock 只采集页面内容，不能把 Dock 自身采进去形成递归绘制。
+                                .haze(hazeState),
+                        ) {
                         when (val s = screen) {
                 Screen.Home -> HomeScreen(
                     providers = providers,

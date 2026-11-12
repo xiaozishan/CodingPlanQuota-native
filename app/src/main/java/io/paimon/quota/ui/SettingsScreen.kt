@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -28,33 +29,37 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                ),
-                navigationIcon = {
-                    TextButton(onClick = onBack, shape = UiShapes.Control) { Text("返回") }
-                },
-            )
-        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentAlignment = Alignment.TopCenter,
         ) {
-            val pagePadding = if (maxWidth >= 600.dp) 24.dp else 20.dp
+            val pagePadding = if (maxWidth >= 600.dp) 24.dp else 16.dp
             Column(
                 Modifier
                     .widthIn(max = 720.dp)
                     .fillMaxWidth()
                     .fillMaxHeight()
-                    .padding(start = pagePadding, top = 8.dp, end = pagePadding, bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = pagePadding, end = pagePadding),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(
+                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp,
+                ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "设置",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                TextButton(onClick = onBack, shape = UiShapes.Control) { Text("返回") }
+            }
             Text("外观", color = MaterialTheme.colorScheme.onSurfaceVariant)
             ThemeMode.entries.forEach { m ->
                 Row(
@@ -134,6 +139,8 @@ fun SettingsScreen(
                 }
                 Switch(checked = mergeAccounts, onCheckedChange = onMergeAccountsChange)
             }
+            // 与首页一致：只提供滚动余量，内容可以穿到 Dock 后方，不留白色底带。
+            Spacer(Modifier.fillMaxWidth().height(84.dp))
             }
         }
     }

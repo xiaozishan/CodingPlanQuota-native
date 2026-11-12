@@ -10,10 +10,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -235,51 +237,54 @@ fun EditScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(if (existing == null) "添加供应商" else "编辑供应商") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                ),
-                navigationIcon = {
-                    TextButton(onClick = onBack, shape = UiShapes.Control) { Text("返回") }
-                },
-                actions = {
-                    TextButton(
-                        enabled = !loginBusy,
-                        shape = UiShapes.Control,
-                        onClick = {
-                            onSave(
-                                Provider(
-                                    id = providerId,
-                                    kind = kind,
-                                    name = name.ifBlank { kind.label },
-                                    baseUrl = baseUrl,
-                                    token = keyText.trim(),
-                                    extra = extras.filterValues { it.isNotBlank() },
-                                )
-                            )
-                        },
-                    ) { Text("保存") }
-                },
-            )
-        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentAlignment = androidx.compose.ui.Alignment.TopCenter,
         ) {
-            val pagePadding = if (maxWidth >= 600.dp) 24.dp else 20.dp
+            val pagePadding = if (maxWidth >= 600.dp) 24.dp else 16.dp
             Column(
                 Modifier
                     .widthIn(max = 840.dp)
                     .fillMaxWidth()
                     .fillMaxHeight()
-                    .padding(start = pagePadding, top = 8.dp, end = pagePadding, bottom = 20.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = pagePadding, end = pagePadding),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(
+                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (existing == null) "添加供应商" else "编辑供应商",
+                    modifier = Modifier.weight(1f),
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                )
+                TextButton(onClick = onBack, shape = UiShapes.Control) { Text("返回") }
+                TextButton(
+                    enabled = !loginBusy,
+                    shape = UiShapes.Control,
+                    onClick = {
+                        onSave(
+                            Provider(
+                                id = providerId,
+                                kind = kind,
+                                name = name.ifBlank { kind.label },
+                                baseUrl = baseUrl,
+                                token = keyText.trim(),
+                                extra = extras.filterValues { it.isNotBlank() },
+                            )
+                        )
+                    },
+                ) { Text("保存") }
+            }
             Text("类型", color = MaterialTheme.colorScheme.onSurfaceVariant)
             ChipRows(
                 options = ProviderKind.entries,
@@ -529,6 +534,8 @@ fun EditScreen(
                     Text("删除这个供应商")
                 }
             }
+            // 透明占位只提供滚动余量，末项可以滚过 Dock，后方仍由 Haze 采集页面内容。
+            Spacer(Modifier.fillMaxWidth().height(84.dp))
             }
         }
     }

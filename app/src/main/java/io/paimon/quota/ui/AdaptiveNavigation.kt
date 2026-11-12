@@ -1,7 +1,6 @@
 ﻿package io.paimon.quota.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,30 +21,31 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeChild
 
 enum class QuotaDestination {
     HOME,
     SETTINGS,
 }
 
-private val DockBarColor = Color.White.copy(alpha = 0.72f)
-private val DockTextColor = Color(0xFF111111)
-private val DockMutedTextColor = Color(0xFF737373)
-
 @Composable
 fun QuotaBottomDock(
+    hazeState: HazeState,
     selected: QuotaDestination,
     onSelect: (QuotaDestination) -> Unit,
     onAdd: () -> Unit,
@@ -57,21 +57,21 @@ fun QuotaBottomDock(
             .navigationBarsPadding()
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
+        val dockShape = SquircleShape(30.dp)
         Surface(
-            modifier = Modifier.fillMaxWidth().height(60.dp),
-            shape = SquircleShape(30.dp),
-            color = DockBarColor,
-            contentColor = DockTextColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .clip(dockShape)
+                .hazeChild(hazeState) {
+                    backgroundColor = Color.Transparent
+                    blurRadius = 24.dp
+                    noiseFactor = 0f
+                },
+            shape = dockShape,
+            color = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             shadowElevation = 0.dp,
-            border = BorderStroke(
-                1.dp,
-                Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.95f),
-                    0.45f to Color.White.copy(alpha = 0.35f),
-                    0.75f to Color(0x12000000),
-                    1f to Color(0x33000000),
-                ),
-            ),
         ) {
             Row(
                 Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -102,6 +102,7 @@ fun QuotaBottomDock(
 
 @Composable
 fun QuotaSideDock(
+    hazeState: HazeState,
     selected: QuotaDestination,
     onSelect: (QuotaDestination) -> Unit,
     onAdd: () -> Unit,
@@ -114,21 +115,20 @@ fun QuotaSideDock(
             .navigationBarsPadding()
             .padding(start = 10.dp, top = 10.dp, end = 6.dp, bottom = 10.dp),
     ) {
+        val dockShape = SquircleShape(24.dp)
         Surface(
-            modifier = Modifier.fillMaxSize(),
-            shape = SquircleShape(24.dp),
-            color = DockBarColor,
-            contentColor = DockTextColor,
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(dockShape)
+                .hazeChild(hazeState) {
+                    backgroundColor = Color.Transparent
+                    blurRadius = 24.dp
+                    noiseFactor = 0f
+                },
+            shape = dockShape,
+            color = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             shadowElevation = 0.dp,
-            border = BorderStroke(
-                1.dp,
-                Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.95f),
-                    0.45f to Color.White.copy(alpha = 0.35f),
-                    0.75f to Color(0x12000000),
-                    1f to Color(0x33000000),
-                ),
-            ),
         ) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 12.dp),
@@ -165,12 +165,13 @@ private fun DockTab(
     label: String,
     modifier: Modifier = Modifier,
 ) {
+    val selectedColor = MaterialTheme.colorScheme.primary
     val contentColor by animateColorAsState(
-        targetValue = if (selected) DockTextColor else DockMutedTextColor,
+        targetValue = if (selected) selectedColor else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "dockContentColor",
     )
     val haloColor by animateColorAsState(
-        targetValue = if (selected) DockTextColor.copy(alpha = 0.09f) else Color.Transparent,
+        targetValue = if (selected) selectedColor.copy(alpha = 0.09f) else Color.Transparent,
         label = "dockHaloColor",
     )
 
@@ -213,8 +214,8 @@ private fun DockAddButton(onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.size(40.dp),
         shape = SquircleShape(10.dp),
-        color = DockTextColor,
-        contentColor = DockBarColor,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
         shadowElevation = 4.dp,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
