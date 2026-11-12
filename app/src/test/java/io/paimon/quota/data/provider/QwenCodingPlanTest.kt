@@ -16,7 +16,7 @@ import org.junit.Test
 class QwenCodingPlanTest {
 
     @Test
-    fun missingApiKeyProducesSpecificErrorThroughProviderRouter() = runBlocking {
+    fun missingConsoleSessionAndBackupKeyProduceSpecificError() = runBlocking {
         val result = QuotaApi.fetch(
             Provider(
                 id = "qwen-test",
@@ -25,7 +25,7 @@ class QwenCodingPlanTest {
             ),
         )
         assertFalse(result.ok)
-        assertEquals("还没填千问 Coding Plan API Key", result.error)
+        assertEquals("还没填千问控制台 Cookie（也可填套餐 API Key 备用）", result.error)
     }
 
     @Test
@@ -124,7 +124,8 @@ class QwenCodingPlanTest {
             ),
         )
         assertFalse(result.ok)
-        assertEquals("未找到有效 Coding Plan 套餐额度；请确认这是套餐专属 API Key", result.error)
+        assertTrue(result.error.orEmpty().contains("未找到有效 Coding Plan 套餐额度"))
+        assertTrue(result.error.orEmpty().contains("HTTP 200"))
     }
 
     @Test
@@ -133,17 +134,70 @@ class QwenCodingPlanTest {
             envelope("""{"codingPlanInstanceInfos":[{"status":"VALID","codingPlanQuotaInfo":{}}]}"""),
         )
         assertFalse(result.ok)
-        assertEquals("千问返回中没有可计算的 5 小时 / 本周 / 本月额度", result.error)
+        assertTrue(result.error.orEmpty().contains("千问返回中没有可计算的 5 小时 / 本周 / 本月额度"))
+        assertTrue(result.error.orEmpty().contains("响应："))
     }
 
     @Test
-    fun reportsConsoleLoginRequirementWithoutCookieFallback() {
+    fun reportsConsoleLoginRequirementWithDiagnosticResponse() {
         val result = QwenCodingPlanProvider.parse(
             HttpResp(200, """{"code":"ConsoleNeedLogin","successResponse":false}"""),
         )
         assertFalse(result.ok)
-        assertTrue(result.error.orEmpty().contains("API Key"))
+        assertTrue(result.error.orEmpty().contains("控制台会话"))
         assertTrue(result.error.orEmpty().contains("ConsoleNeedLogin"))
+        assertTrue(result.error.orEmpty().contains("HTTP 200"))
+        assertTrue(result.error.orEmpty().contains("successResponse"))
+    }
+
+    @Test
+    fun consoleCookieIsPreferredAndBackupApiKeyIsNotSent() = runBlocking {
+        var sentHeaders: Map<String, String>? = null
+        val result = QwenCodingPlanProvider.fetch(
+            Provider(
+                id = "qwen-cookie",
+                kind = ProviderKind.QWEN_CLOUD_INDIVIDUAL,
+                name = "千问控制台会话",
+                token = "backup-key",
+                extra = mapOf("cookie" to "session=abc; sec_token=def"),
+            ),
+        ) { _, _, headers ->
+            sentHeaders = headers
+            envelope("""{"codingPlanInstanceInfos":[{"status":"ACTIVE","codingPlanQuotaInfo":{"per5HourUsedQuota":1,"per5HourTotalQuota":2}}]}""")
+        }
+
+        assertTrue(result.ok)
+        assertEquals("session=abc; sec_token=def", sentHeaders?.get("Cookie"))
+        assertNull(sentHeaders?.get("Authorization"))
+        assertNull(sentHeaders?.get("x-api-key"))
+        assertNull(sentHeaders?.get("X-DashScope-API-Key"))
+    }
+
+    @Test
+    fun apiKeyRemainsOptionalFallbackWhenCookieIsBlank() = runBlocking {
+        var sentHeaders: Map<String, String>? = null
+        QwenCodingPlanProvider.fetch(
+            Provider(id = "qwen-key-fallback", kind = ProviderKind.QWEN_CLOUD_INDIVIDUAL,
+                name = "千问备用 Key", token = "test-key"),
+        ) { _, _, headers ->
+            sentHeaders = headers
+            envelope("""{"codingPlanInstanceInfos":[{"status":"ACTIVE","codingPlanQuotaInfo":{"per5HourUsedQuota":1,"per5HourTotalQuota":2}}]}""")
+        }
+
+        assertEquals("Bearer test-key", sentHeaders?.get("Authorization"))
+        assertFalse(sentHeaders?.keys?.any { it.equals("Cookie", ignoreCase = true) } == true)
+    }
+
+    @Test
+    fun httpFailureIncludesStatusAndBoundedResponseSnippet() {
+        val result = QwenCodingPlanProvider.parse(
+            HttpResp(403, "<html>  forbidden\nconsole session  </html>" + "x".repeat(800)),
+        )
+
+        assertFalse(result.ok)
+        assertTrue(result.error.orEmpty().contains("HTTP 403"))
+        assertTrue(result.error.orEmpty().contains("<html> forbidden console session"))
+        assertTrue(result.error.orEmpty().length < 650)
     }
 
     @Test

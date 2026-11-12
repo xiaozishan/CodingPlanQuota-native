@@ -4,13 +4,15 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -54,6 +56,21 @@ private sealed interface Screen {
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            // 两个系统栏都不加 scrim；图标仍按深浅色主题自动切换。
+            statusBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+        )
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
         super.onCreate(savedInstanceState)
         GeminiWebQuota.initialize(applicationContext)
         val prefs = Prefs(this)
@@ -178,6 +195,8 @@ private fun AppRoot(prefs: Prefs) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = MaterialTheme.colorScheme.background,
+                    // 顶层不再重复消费状态栏 inset；各页面自行保留可交互内容的安全间距。
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     bottomBar = {
                         if (!sideDock) {
                             QuotaBottomDock(
@@ -187,8 +206,9 @@ private fun AppRoot(prefs: Prefs) {
                             )
                         }
                     },
-                ) { dockPadding ->
-                    Row(Modifier.fillMaxSize().padding(dockPadding)) {
+                ) { _ ->
+                    // 不消费 dock 高度，列表可以直接绘制到胶囊和系统导航栏后面。
+                    Row(Modifier.fillMaxSize()) {
                         if (sideDock) {
                             QuotaSideDock(
                                 selected = selectedDestination,
@@ -205,6 +225,14 @@ private fun AppRoot(prefs: Prefs) {
                     loading = loading,
                     onRefresh = { refreshAll() },
                     onEdit = { screen = Screen.Edit(it) },
+                    onDelete = { removed ->
+                        val removedIds = removed.mapTo(mutableSetOf()) { it.id }
+                        providers = providers.filterNot { it.id in removedIds }
+                        results = results.filterKeys { it !in removedIds }
+                        prefs.saveProviders(providers)
+                        prefs.saveQuotaResults(results)
+                        queryGeneration++
+                    },
                     mergeAccounts = mergeAccounts,
                 )
 

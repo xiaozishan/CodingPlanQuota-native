@@ -51,7 +51,7 @@ fun SettingsScreen(
                     .widthIn(max = 720.dp)
                     .fillMaxWidth()
                     .fillMaxHeight()
-                    .padding(horizontal = pagePadding, vertical = 20.dp)
+                    .padding(start = pagePadding, top = 8.dp, end = pagePadding, bottom = 20.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

@@ -65,6 +65,10 @@ private fun fieldsFor(kind: ProviderKind): List<ExtraField> = when (kind) {
         ExtraField("cookie", "Cookie（模式②直连）", secret = true),
     )
 
+    ProviderKind.QWEN_CLOUD_INDIVIDUAL -> listOf(
+        ExtraField("cookie", "阿里云控制台 Cookie（默认）", secret = true, multiline = true),
+    )
+
     else -> emptyList()
 }
 
@@ -81,7 +85,7 @@ private fun tokenLabel(kind: ProviderKind): String = when (kind) {
     ProviderKind.GEMINI -> "Google OAuth access_token（可留空，推荐下方登录）"
     ProviderKind.CODEX_FEELOL -> "feelol token"
     ProviderKind.GITHUB_COPILOT -> "GitHub Copilot OAuth token"
-    ProviderKind.QWEN_CLOUD_INDIVIDUAL -> "Coding Plan API Key"
+    ProviderKind.QWEN_CLOUD_INDIVIDUAL -> "Coding Plan API Key（备用，可留空）"
     else -> "API Key"
 }
 
@@ -106,7 +110,7 @@ private fun hintText(kind: ProviderKind): String = when (kind) {
     ProviderKind.GITHUB_COPILOT ->
         "粘贴 Copilot 登录使用的 GitHub OAuth token（通常以 ghu_ 开头）；查询 api.github.com/copilot_internal/user 的 Premium requests 余额。内部接口可能变动。"
     ProviderKind.QWEN_CLOUD_INDIVIDUAL ->
-        "在阿里云百炼 Coding Plan 页面复制套餐专属 API Key（通常以 sk-sp- 开头，不是普通按量 Key）。控制台地址留空时自动依次查询国际站和国内站；填写后只查该分区，可粘贴国内 / 国际控制台页面或自定义 HTTPS 地址。Key 加密保存，只发往所选控制台。旧版 Cookie 不再使用。"
+        "默认使用控制台会话：先登录对应区域的阿里云百炼 Coding Plan 页面，再从浏览器开发者工具 Network 复制该控制台请求的完整 Cookie。Cookie 与备用 API Key 都加密保存，只发往所选控制台；自定义地址会收到凭据，请只填写信任的 HTTPS 地址。控制台地址留空时依次查询国际站和国内站，填写后只查该分区。失败卡片会显示 HTTP 状态码和限量响应片段。"
     ProviderKind.CUSTOM -> "地址返回 JSON 时优先读 used_pct，否则显示原始返回片段。"
     else -> "凭据只保存在本机，用 Android Keystore 加密（AES-256-GCM）。"
 }
@@ -253,11 +257,7 @@ fun EditScreen(
                                     name = name.ifBlank { kind.label },
                                     baseUrl = baseUrl,
                                     token = keyText.trim(),
-                                    extra = extras.filterValues { it.isNotBlank() }.let { values ->
-                                        if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL) {
-                                            values - "cookie"
-                                        } else values
-                                    },
+                                    extra = extras.filterValues { it.isNotBlank() },
                                 )
                             )
                         },
@@ -276,7 +276,7 @@ fun EditScreen(
                     .widthIn(max = 840.dp)
                     .fillMaxWidth()
                     .fillMaxHeight()
-                    .padding(horizontal = pagePadding, vertical = 20.dp)
+                    .padding(start = pagePadding, top = 8.dp, end = pagePadding, bottom = 20.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {

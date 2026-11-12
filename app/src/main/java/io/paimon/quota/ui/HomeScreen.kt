@@ -1,19 +1,38 @@
 ﻿package io.paimon.quota.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,8 +41,10 @@ import androidx.compose.ui.window.DialogProperties
 import io.paimon.quota.data.Provider
 import io.paimon.quota.data.ProviderKind
 import io.paimon.quota.data.QuotaResult
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     providers: List<Provider>,
@@ -31,6 +52,7 @@ fun HomeScreen(
     loading: Boolean,
     onRefresh: () -> Unit,
     onEdit: (Provider) -> Unit,
+    onDelete: (List<Provider>) -> Unit,
     mergeAccounts: Boolean,
 ) {
     var rawJson by remember { mutableStateOf<String?>(null) }
@@ -44,34 +66,8 @@ fun HomeScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text("额度盘", fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                ),
-                actions = {
-                    TextButton(onClick = onRefresh, enabled = !loading, shape = UiShapes.Control) {
-                        Text(if (loading) "刷新中" else "刷新")
-                    }
-                },
-            )
-        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
-        if (providers.isEmpty()) {
-            Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "还没有供应商，点导航栏 ＋ 添加",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            return@Scaffold
-        }
-
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentAlignment = Alignment.TopCenter,
@@ -91,30 +87,74 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = pagePadding,
-                        top = 8.dp,
+                        // 首屏标题避开状态栏；该间距随列表滚动，内容可从状态栏下穿过。
+                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp,
                         end = pagePadding,
-                        bottom = 32.dp,
+                        bottom = 0.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(cardSpacing),
                     horizontalArrangement = Arrangement.spacedBy(cardSpacing),
                 ) {
+                    item(
+                        key = "home-header",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "header",
+                    ) {
+                        HomeHeader(loading = loading, onRefresh = onRefresh)
+                    }
+                    if (cardGroups.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Box(
+                                Modifier.fillMaxWidth().padding(vertical = 120.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "还没有供应商，点导航栏 ＋ 添加",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     items(cardGroups, key = { group -> group.joinToString(":") { it.id } }) { group ->
                         val p = group.first()
-                        if (group.size > 1) {
-                            MergedProviderCard(
-                                accounts = group,
-                                results = results,
-                                onEdit = onEdit,
-                                onShowRaw = { rawJson = it },
-                            )
-                        } else {
-                            ProviderCard(
-                                p = p,
-                                r = results[p.id],
-                                onClick = { onEdit(p) },
-                                onShowRaw = { rawJson = it },
-                            )
+                        SwipeDeleteCard(
+                            deleteLabel = if (group.size > 1) {
+                                "删除${p.kind.label}的 ${group.size} 个账号"
+                            } else {
+                                "删除${p.name.ifBlank { p.kind.label }}"
+                            },
+                            onDelete = { onDelete(group) },
+                            modifier = Modifier.animateItemPlacement(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMediumLow,
+                                ),
+                            ),
+                        ) {
+                            if (group.size > 1) {
+                                MergedProviderCard(
+                                    accounts = group,
+                                    results = results,
+                                    onEdit = onEdit,
+                                    onShowRaw = { rawJson = it },
+                                )
+                            } else {
+                                ProviderCard(
+                                    p = p,
+                                    r = results[p.id],
+                                    onClick = { onEdit(p) },
+                                    onShowRaw = { rawJson = it },
+                                )
+                            }
                         }
+                    }
+                    item(
+                        key = "home-bottom-spacer",
+                        span = { GridItemSpan(maxLineSpan) },
+                        contentType = "transparent-spacer",
+                    ) {
+                        // 只提供滚动余量，不绘制背景；60dp Dock + 24dp 底部外边距。
+                        Box(Modifier.fillMaxWidth().height(84.dp))
                     }
                 }
             }
@@ -123,6 +163,135 @@ fun HomeScreen(
 
     rawJson?.let { raw ->
         RawJsonDialog(raw = raw, onDismiss = { rawJson = null })
+    }
+}
+
+@Composable
+private fun HomeHeader(
+    loading: Boolean,
+    onRefresh: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "额度盘",
+            fontSize = 30.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        TextButton(onClick = onRefresh, enabled = !loading, shape = UiShapes.Control) {
+            Text(if (loading) "刷新中" else "刷新")
+        }
+    }
+}
+
+@Composable
+private fun SwipeDeleteCard(
+    deleteLabel: String,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val revealWidthPx = with(LocalDensity.current) { 88.dp.toPx() }
+    val swipeOffset = remember { Animatable(0f) }
+    var deleting by remember { mutableStateOf(false) }
+    val reveal = (-swipeOffset.value / revealWidthPx).coerceIn(0f, 1f)
+
+    LaunchedEffect(deleting) {
+        if (deleting) {
+            delay(310)
+            onDelete()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = !deleting,
+        modifier = modifier,
+        exit = shrinkVertically(animationSpec = tween(300)) + fadeOut(animationSpec = tween(180)),
+    ) {
+        Box(Modifier.fillMaxWidth().clipToBounds()) {
+            // 前景卡片移开后才露出红底；透明度同时跟位移联动。
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = reveal }
+                    .background(MaterialTheme.colorScheme.error, UiShapes.Card),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Surface(
+                    onClick = { if (!deleting) deleting = true },
+                    enabled = !deleting,
+                    modifier = Modifier
+                        .padding(end = 16.dp)
+                        .size(56.dp)
+                        .graphicsLayer {
+                            alpha = reveal
+                            scaleX = 0.85f + 0.15f * reveal
+                            scaleY = 0.85f + 0.15f * reveal
+                        }
+                        .semantics { contentDescription = deleteLabel },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.error,
+                    contentColor = Color.White,
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("删除", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            Box(
+                Modifier
+                    .graphicsLayer { translationX = swipeOffset.value }
+                    .pointerInput(revealWidthPx) {
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                scope.launch { swipeOffset.stop() }
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                scope.launch {
+                                    swipeOffset.snapTo(
+                                        (swipeOffset.value + dragAmount)
+                                            .coerceIn(-revealWidthPx, 0f),
+                                    )
+                                }
+                            },
+                            onDragEnd = {
+                                scope.launch {
+                                    val target = if (swipeOffset.value <= -revealWidthPx * 0.45f) {
+                                        -revealWidthPx
+                                    } else 0f
+                                    swipeOffset.animateTo(
+                                        target,
+                                        animationSpec = spring(
+                                            dampingRatio = 0.82f,
+                                            stiffness = Spring.StiffnessMediumLow,
+                                        ),
+                                    )
+                                }
+                            },
+                            onDragCancel = {
+                                scope.launch {
+                                    swipeOffset.animateTo(
+                                        0f,
+                                        animationSpec = spring(
+                                            dampingRatio = 0.82f,
+                                            stiffness = Spring.StiffnessMediumLow,
+                                        ),
+                                    )
+                                }
+                            },
+                        )
+                    },
+            ) {
+                content()
+            }
+        }
     }
 }
 
@@ -358,5 +527,3 @@ private fun RawJsonDialog(raw: String, onDismiss: () -> Unit) {
         },
     )
 }
-
-

@@ -1,16 +1,17 @@
-# 千问 Coding Plan API Key 额度接口
+# 千问 Coding Plan 控制台会话额度接口
 
 调研与改造日期：2026-11-12。
 
 ## 结论
 
-从 0.5.28 起，安卓端接入**阿里云百炼 Coding Plan**，使用套餐专属 API Key（通常为 `sk-sp-`）查询真实的 5 小时、每周、每月请求次数额度。旧版 `Qwen Cloud Individual Token Plan` 的 Cookie + `sec_token` 流程已删除，不再作为回退。
+从 0.6.7 起，安卓端接入**阿里云百炼 Coding Plan**，默认使用对应区域控制台的会话 Cookie 查询真实的 5 小时、每周、每月请求次数额度。套餐专属 API Key（通常为 `sk-sp-`）仍保留为可选备用；Cookie 非空时只发送 Cookie，不与 API Key 混发。
 
 这两个产品不能混用：
 
 - 本实现：`coding.dashscope.aliyuncs.com` / `coding-intl.dashscope.aliyuncs.com` 对应的 **Coding Plan**；额度查询走下方控制台 RPC。
 - 旧实现：`home.qwencloud.com` 的 **Individual Token Plan**，其 `personal/api/v2/usage` 是另一套接口和响应结构。
 - 普通 DashScope 按量 API Key 不等于 Coding Plan 专属 Key；App 会如实显示接口错误，不伪造额度。
+- 此 Cookie 是 `bailian.console.aliyun.com` / `modelstudio.console.alibabacloud.com` 的控制台会话，不是旧版 `home.qwencloud.com` 的 Cookie。
 
 ## 区域与端点
 
@@ -29,7 +30,17 @@ POST {Origin}/data/api.json
   &currentRegionId={区域}
 ```
 
-请求头：
+控制台会话请求头（0.6.7 默认）：
+
+```text
+Cookie: 完整控制台 Cookie
+Content-Type: application/json
+Accept: application/json
+Origin: <上表 Origin>
+Referer: <对应区域 Coding Plan 控制台页面>
+```
+
+备用 API Key 请求头：
 
 ```text
 Authorization: Bearer API_KEY
@@ -65,9 +76,9 @@ JSON 请求体：
 
 无论采用哪个地址，请求都会归一为 `{Origin}/data/api.json?...currentRegionId=...`。
 仅接受 HTTPS，并拒绝带 userinfo 的地址，避免明文泄露 Key 或误认实际收件方。
-自定义控制台会收到 Coding Plan API Key，应只填写自己信任的地址。
+自定义控制台会收到控制台 Cookie 或备用 Coding Plan API Key，应只填写自己信任的地址。
 
-> 该额度 RPC 是控制台内部接口的 API Key 兼容路径，不是官方公开、稳定性受保证的 REST API；部分账号或区域仍可能要求控制台登录。
+> 该额度 RPC 是控制台内部接口，不是官方公开、稳定性受保证的 REST API。0.6.7 优先使用控制台会话，正是为了兼容要求控制台登录的账号或区域。
 
 ## 响应解析
 
@@ -87,7 +98,7 @@ JSON 请求体：
 
 1. **阿里云官方 CLI**：`bl usage coding-plan` 使用相同 RPC、商品代码、`codingPlanInstanceInfos` 和三窗口字段。
    - <https://github.com/modelstudioai/cli/blob/main/packages/commands/src/commands/usage/coding-plan.ts>
-   - 官方 CLI 的控制台模式使用 Console Access Token；本 App 采用的是下述多个独立实现验证过的 API Key 请求头，二者鉴权路径不混淆。
+   - 官方 CLI 的控制台模式使用 Console Access Token；本 App 默认直接复用用户提供的控制台 Cookie，也保留下述多个独立实现验证过的 API Key 请求头作为备用，三种鉴权路径不混淆。
 2. **Qwen Code 官方文档**：确认 Coding Plan 专属 API Key、国内 / 国际推理 Base URL 与区域差异。
    - <https://qwenlm.github.io/qwen-code-docs/en/users/configuration/model-providers/#alibaba-cloud-coding-plan>
 3. **CodexBar**：`AlibabaCodingPlanUsageFetcher.swift` 明确实现 API Key 的三个请求头、两个区域及同样的响应字段。
@@ -97,7 +108,7 @@ JSON 请求体：
 
 ## 限制与安全
 
-- 部分账号 / 区域可能仍返回 `ConsoleNeedLogin`；这是上游对 API Key 查询路径的限制，App 会明确报错，**不会重新要求或发送 Cookie**。
+- 会话过期、分区错误或接口变化时，卡片会显示 HTTP 状态码与最多 500 字符的响应片段；不再只显示笼统的「失败」。
 - 未读取或使用本机任何千问凭据；本次验证包括官方与多份开源实现交叉核对、无凭据端点行为检查，以及本地响应解析单元测试，不声称完成真实账号端到端测试。
-- API Key 存入现有 Android Keystore 加密主凭据。0.5.27 遗留的千问 Cookie 在配置加载迁移时移除。
+- Cookie 存入现有 Android Keystore 加密的敏感 extra 字段，备用 API Key 存入加密主凭据；旧版千问 Cookie 不再在配置加载时删除。
 - 所有请求均为只读额度查询；响应原文不写入启动缓存，避免额外保存账号信息。

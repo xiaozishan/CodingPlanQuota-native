@@ -46,11 +46,11 @@ internal data class QwenConsoleEndpoint(
 internal typealias QwenPoster = (String, String, Map<String, String>) -> HttpResp
 
 /**
- * 千问 / 阿里云百炼 Coding Plan 的 API Key 额度查询。
+ * 千问 / 阿里云百炼 Coding Plan 的控制台会话额度查询。
  *
- * 套餐专属 Key（通常为 sk-sp-）直接调用只读 RPC：
+ * 默认携带用户从对应区域控制台复制的完整 Cookie，调用只读 RPC：
  * POST <区域控制台>/data/api.json?action=zeldaEasy.broadscope-bailian.codingPlan.queryCodingPlanInstanceInfoV2
- * 请求同时携带 Authorization、x-api-key 和 X-DashScope-API-Key，不使用网页 Cookie。
+ * 套餐专属 API Key 仍保留为可选备用鉴权方式。
  *
  * 参考（2026-11-12 交叉核对）：
  * - 阿里云官方 CLI：modelstudioai/cli `packages/commands/src/commands/usage/coding-plan.ts`
@@ -64,6 +64,16 @@ internal object QwenCodingPlanProvider {
     private const val ACTION =
         "zeldaEasy.broadscope-bailian.codingPlan.queryCodingPlanInstanceInfoV2"
     private const val API_KEY_LIMIT = 4_096
+    private const val COOKIE_LIMIT = 32_768
+    private const val RESPONSE_SNIPPET_LIMIT = 500
+
+    /** 单次请求只使用一种鉴权，避免把备用 Key 与控制台会话混发。 */
+    private data class ConsoleAuth(
+        val cookie: String = "",
+        val apiKey: String = "",
+    ) {
+        val usesSession: Boolean get() = cookie.isNotBlank()
+    }
 
     /** 控制台首页、分区页面或 /data/api.json 地址归一为控制台 Origin。 */
     internal fun resolveConsole(raw: String): QwenConsoleEndpoint? {
@@ -103,12 +113,19 @@ internal object QwenCodingPlanProvider {
         poster: QwenPoster = { url, body, headers -> Http.post(url, body, headers) },
     ): QuotaResult {
         val apiKey = p.token.removePrefix("\uFEFF").trim()
-        if (apiKey.isBlank()) {
-            return QuotaResult(false, error = "还没填千问 Coding Plan API Key")
+        val cookie = p.extra["cookie"].orEmpty().removePrefix("\uFEFF").trim()
+        if (cookie.isBlank() && apiKey.isBlank()) {
+            return QuotaResult(false, error = "还没填千问控制台 Cookie（也可填套餐 API Key 备用）")
         }
-        if (apiKey.length > API_KEY_LIMIT || apiKey.any { it == '\r' || it == '\n' || it < ' ' }) {
+        if (cookie.length > COOKIE_LIMIT || cookie.any { it == '\r' || it == '\n' || it < ' ' }) {
+            return QuotaResult(false, error = "千问控制台 Cookie 格式无效")
+        }
+        if (cookie.isBlank() &&
+            (apiKey.length > API_KEY_LIMIT || apiKey.any { it == '\r' || it == '\n' || it < ' ' })
+        ) {
             return QuotaResult(false, error = "Coding Plan API Key 格式无效")
         }
+        val auth = ConsoleAuth(cookie = cookie, apiKey = apiKey)
 
         val customConsole = p.baseUrl.removePrefix("\uFEFF").trim()
         if (customConsole.isNotEmpty()) {
@@ -117,16 +134,16 @@ internal object QwenCodingPlanProvider {
                 error = "千问控制台地址无效：请输入不带账号信息的完整 HTTPS 地址",
             )
             // 显式指定分区后只查该入口，避免错误分区被第二次请求掩盖。
-            return fetchOnce(endpoint, poster, apiKey)
+            return fetchOnce(endpoint, poster, auth)
         }
 
         // 未填控制台地址时保留原行为：先国际站再试国内站。
-        val international = fetchOnce(QwenCodingPlanRegion.INTERNATIONAL, poster, apiKey)
+        val international = fetchOnce(QwenCodingPlanRegion.INTERNATIONAL, poster, auth)
         if (international.ok) return international
-        val china = fetchOnce(QwenCodingPlanRegion.CHINA, poster, apiKey)
+        val china = fetchOnce(QwenCodingPlanRegion.CHINA, poster, auth)
         if (china.ok) return china
 
-        // 第二次结果通常更贴近国内 Key；保留国际站错误可帮助诊断区域限制。
+        // 第二次结果通常更贴近国内账号；保留国际站错误可帮助诊断区域限制。
         val firstError = international.error.orEmpty()
         val secondError = china.error.orEmpty()
         val combined = when {
@@ -175,7 +192,7 @@ internal object QwenCodingPlanProvider {
             "Accept" to "application/json",
             "Origin" to endpoint.gateway,
             "Referer" to endpoint.dashboardUrl,
-            "User-Agent" to "CodingPlanQuota/0.6.0 (Android)",
+            "User-Agent" to "CodingPlanQuota/0.6.7 (Android)",
         )
 
     internal fun apiHeaders(region: QwenCodingPlanRegion, apiKey: String): Map<String, String> =
@@ -187,37 +204,87 @@ internal object QwenCodingPlanProvider {
             "Accept" to "application/json",
             "Origin" to region.gateway,
             "Referer" to region.dashboardUrl,
-            "User-Agent" to "CodingPlanQuota/0.6.0 (Android)",
+            "User-Agent" to "CodingPlanQuota/0.6.7 (Android)",
         )
 
-    private fun fetchOnce(endpoint: QwenConsoleEndpoint, poster: QwenPoster, apiKey: String): QuotaResult = try {
-        parse(poster(requestUrl(endpoint), requestBody(endpoint), apiHeaders(endpoint, apiKey)))
-    } catch (e: Exception) {
-        QuotaResult(false, error = e.message ?: "网络错误")
+    internal fun sessionHeaders(
+        endpoint: QwenConsoleEndpoint,
+        cookie: String,
+    ): Map<String, String> = mapOf(
+        "Cookie" to cookie,
+        "Content-Type" to "application/json",
+        "Accept" to "application/json",
+        "Origin" to endpoint.gateway,
+        "Referer" to endpoint.dashboardUrl,
+        "User-Agent" to "CodingPlanQuota/0.6.7 (Android)",
+    )
+
+    internal fun sessionHeaders(
+        region: QwenCodingPlanRegion,
+        cookie: String,
+    ): Map<String, String> = mapOf(
+        "Cookie" to cookie,
+        "Content-Type" to "application/json",
+        "Accept" to "application/json",
+        "Origin" to region.gateway,
+        "Referer" to region.dashboardUrl,
+        "User-Agent" to "CodingPlanQuota/0.6.7 (Android)",
+    )
+
+    private fun authHeaders(
+        endpoint: QwenConsoleEndpoint,
+        auth: ConsoleAuth,
+    ): Map<String, String> = if (auth.usesSession) {
+        sessionHeaders(endpoint, auth.cookie)
+    } else {
+        apiHeaders(endpoint, auth.apiKey)
     }
 
-    private fun fetchOnce(region: QwenCodingPlanRegion, poster: QwenPoster, apiKey: String): QuotaResult = try {
-        parse(poster(requestUrl(region), requestBody(region), apiHeaders(region, apiKey)))
+    private fun authHeaders(
+        region: QwenCodingPlanRegion,
+        auth: ConsoleAuth,
+    ): Map<String, String> = if (auth.usesSession) {
+        sessionHeaders(region, auth.cookie)
+    } else {
+        apiHeaders(region, auth.apiKey)
+    }
+
+    private fun fetchOnce(
+        endpoint: QwenConsoleEndpoint,
+        poster: QwenPoster,
+        auth: ConsoleAuth,
+    ): QuotaResult = try {
+        parse(poster(requestUrl(endpoint), requestBody(endpoint), authHeaders(endpoint, auth)))
     } catch (e: Exception) {
-        QuotaResult(false, error = e.message ?: "网络错误")
+        QuotaResult(false, error = "千问控制台网络错误：${e.message ?: e.javaClass.simpleName}")
+    }
+
+    private fun fetchOnce(
+        region: QwenCodingPlanRegion,
+        poster: QwenPoster,
+        auth: ConsoleAuth,
+    ): QuotaResult = try {
+        parse(poster(requestUrl(region), requestBody(region), authHeaders(region, auth)))
+    } catch (e: Exception) {
+        QuotaResult(false, error = "千问控制台网络错误：${e.message ?: e.javaClass.simpleName}")
     }
 
     internal fun parse(response: HttpResp): QuotaResult {
         when (response.code) {
             in 200..299 -> Unit
-            401, 403 -> return QuotaResult(
-                false,
-                error = "Coding Plan API Key 无效或该区域没有套餐权限（HTTP ${response.code}）",
+            401, 403 -> return failure(
+                response,
+                "控制台会话无效 / 已过期，或该区域没有套餐权限",
             )
-            429 -> return QuotaResult(false, error = "千问额度接口被限流，请稍后再试")
-            else -> return QuotaResult(false, error = "千问额度接口 HTTP ${response.code}")
+            429 -> return failure(response, "千问额度接口被限流，请稍后再试")
+            else -> return failure(response, "千问额度接口请求失败")
         }
 
-        val root = response.json ?: return QuotaResult(false, error = "千问额度返回不是 JSON")
-        responseError(root)?.let { return it }
-        val usage = findUsage(root) ?: return QuotaResult(
-            false,
-            error = "未找到有效 Coding Plan 套餐额度；请确认这是套餐专属 API Key",
+        val root = response.json ?: return failure(response, "千问额度返回不是 JSON")
+        responseError(root, response)?.let { return it }
+        val usage = findUsage(root) ?: return failure(
+            response,
+            "未找到有效 Coding Plan 套餐额度；请确认控制台登录分区与套餐状态",
         )
 
         val tiers = mutableListOf<Tier>()
@@ -225,7 +292,7 @@ internal object QwenCodingPlanProvider {
         addWindow(tiers, usage.quota, "本周", "perWeek")
         addWindow(tiers, usage.quota, "本月", "perBillMonth", "perMonth")
         if (tiers.isEmpty()) {
-            return QuotaResult(false, error = "千问返回中没有可计算的 5 小时 / 本周 / 本月额度")
+            return failure(response, "千问返回中没有可计算的 5 小时 / 本周 / 本月额度")
         }
 
         val plan = usage.plan?.takeIf { it.isNotBlank() }
@@ -237,17 +304,14 @@ internal object QwenCodingPlanProvider {
         return QuotaResult(true, tiers = tiers, message = message)
     }
 
-    private fun responseError(root: JSONObject): QuotaResult? {
+    private fun responseError(root: JSONObject, response: HttpResp): QuotaResult? {
         val code = firstString(root, "code", "Code")?.trim().orEmpty()
         val message = firstString(root, "message", "Message").orEmpty()
         if (code.contains("login", ignoreCase = true) ||
             message.contains("notlogined", ignoreCase = true) ||
             message.contains("needlogin", ignoreCase = true)
         ) {
-            return QuotaResult(
-                false,
-                error = "该区域暂未接受 API Key 查额度（$code）；请确认 Key 类型与套餐区域",
-            )
+            return failure(response, "控制台会话无效或已过期（$code）")
         }
 
         val failed = listOf("success", "Success", "successResponse").any { name ->
@@ -255,12 +319,22 @@ internal object QwenCodingPlanProvider {
         }
         val badCode = code.isNotEmpty() && code !in setOf("0", "200", "Success", "success", "SUCCESS")
         if (failed || badCode) {
-            return QuotaResult(
-                false,
-                error = "千问额度接口返回失败" + if (code.isBlank()) "" else "：$code",
-            )
+            return failure(response, "千问额度接口返回失败" + if (code.isBlank()) "" else "：$code")
         }
         return null
+    }
+
+    /** 所有上游失败都带状态码和限量响应片段，便于在卡片上直接判断登录 / 分区问题。 */
+    private fun failure(response: HttpResp, reason: String): QuotaResult {
+        val snippet = response.body
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(RESPONSE_SNIPPET_LIMIT)
+            .ifBlank { "<空响应>" }
+        return QuotaResult(
+            false,
+            error = "$reason（HTTP ${response.code}）；响应：$snippet",
+        )
     }
 
     private data class UsagePayload(

@@ -19,7 +19,7 @@ AI 编程套餐额度查看器，原生 Kotlin + Jetpack Compose 重写版。
 | Gemini（网页版） | Google 账号登录，读 gemini.google.com/usage 的 5 小时窗口与周额度 |
 | Antigravity | Google OAuth + PKCE |
 | GitHub Copilot | GitHub OAuth token，显示 Premium requests 剩余次数与月度总额 |
-| 千问 Coding Plan | 套餐专属 API Key，显示 5 小时 / 每周 / 每月额度；留空自动适配国内 / 国际站，也可自定义控制台分区地址 |
+| 千问 Coding Plan | 默认使用阿里云控制台会话 Cookie，显示 5 小时 / 每周 / 每月额度；套餐 API Key 可作备用，支持国内 / 国际站与自定义控制台分区 |
 | 自定义 JSON | 自填 Base URL 与解析规则 |
 
 ## 主要功能
@@ -44,8 +44,15 @@ gradle assembleDebug
 
 ## 版本
 
-当前版本：**0.6.0**（versionCode 35）
+当前版本：**0.6.7**（versionCode 42）
 
+- 0.6.7：Dock 改连续曲率圆角；末尾增加 84dp 全透明滚动占位；卡片左滑展开红色删除按钮，带回弹与收起动画；千问默认改用控制台 Cookie，失败显示状态码和响应片段
+- 0.6.6：底部 Dock 圆角增至 30dp
+- 0.6.5：关闭系统状态栏 / 导航栏强制对比遮罩
+- 0.6.4：系统栏零遮罩边到边，首页内容可穿到状态栏下；底部 Dock 仅胶囊保留白底，列表延伸到胶囊后方
+- 0.6.3：首页大标题改为列表首项并随内容自然滚出，不再固定或反向滑回；Dock 选中项增加柔和光晕
+- 0.6.2：收紧 Dock 高度与内外间距，压缩首页、设置和编辑页顶部留白；首页标题栏随列表滚动收起、反向滚动即恢复
+- 0.6.1：Dock 改为酷安风白色长条、主色选中与中间圆角方形实心加号，平板侧栏同步更新
 - 0.6.0：千问 Coding Plan 支持自定义控制台地址（分区）；留空仍自动探测国内 / 国际站
 - 0.5.29：手机改用底部玻璃 Dock、平板改用左侧玻璃 Dock；＋ 打开带动画的供应商选择底部抽屉
 - 0.5.28：千问 Coding Plan 改用套餐专属 API Key，接入 `queryCodingPlanInstanceInfoV2` 真实用量接口；不再使用 Cookie，支持国内 / 国际站自动探测
