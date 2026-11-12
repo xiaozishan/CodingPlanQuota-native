@@ -56,6 +56,7 @@ class Prefs(context: Context) {
         val raw = sp.getString("providers", null) ?: return emptyList()
 
         var legacyPlaintext = false
+        var removedQwenCookie = false
         val list = runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i ->
@@ -70,6 +71,11 @@ class Prefs(context: Context) {
                 val extra = buildMap {
                     if (extraObj != null) {
                         extraObj.keys().forEach { k ->
+                            // 0.5.27 的千问 Cookie 方案已废止；升级后立即移除旧会话。
+                            if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL && k == "cookie") {
+                                removedQwenCookie = true
+                                return@forEach
+                            }
                             val v = extraObj.optString(k)
                             put(
                                 k,
@@ -95,8 +101,8 @@ class Prefs(context: Context) {
             }
         }.getOrDefault(emptyList())
 
-        // 旧版本的明文凭据：解出后立刻加密回写，本地不再留明文
-        if (legacyPlaintext) saveProviders(list)
+        // 旧明文凭据立刻加密回写；旧千问 Cookie 也在本次迁移中彻底移除。
+        if (legacyPlaintext || removedQwenCookie) saveProviders(list)
 
         return list
     }

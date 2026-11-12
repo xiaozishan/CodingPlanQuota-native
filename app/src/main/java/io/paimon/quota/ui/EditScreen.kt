@@ -25,7 +25,7 @@ import io.paimon.quota.data.provider.AuthSession
 import io.paimon.quota.data.provider.ChatgptPlusProvider
 import io.paimon.quota.data.provider.GeminiProvider
 import io.paimon.quota.data.provider.GeminiWebQuota
-import io.paimon.quota.data.provider.QwenCloudIndividualProvider
+import io.paimon.quota.data.provider.QwenCodingPlanProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -65,17 +65,13 @@ private fun fieldsFor(kind: ProviderKind): List<ExtraField> = when (kind) {
         ExtraField("cookie", "Cookie（模式②直连）", secret = true),
     )
 
-    ProviderKind.QWEN_CLOUD_INDIVIDUAL -> listOf(
-        ExtraField("cookie", "Qwen Cloud Cookie", secret = true, multiline = true),
-    )
-
     else -> emptyList()
 }
 
 /** 主凭据字段是否显示 */
 private fun showsMainKey(kind: ProviderKind): Boolean = when (kind) {
     ProviderKind.CHATGPT_PLUS, ProviderKind.VOLCENGINE, ProviderKind.MIMO,
-    ProviderKind.ANTIGRAVITY, ProviderKind.QWEN_CLOUD_INDIVIDUAL -> false
+    ProviderKind.ANTIGRAVITY -> false
     else -> true
 }
 
@@ -85,6 +81,7 @@ private fun tokenLabel(kind: ProviderKind): String = when (kind) {
     ProviderKind.GEMINI -> "Google OAuth access_token（可留空，推荐下方登录）"
     ProviderKind.CODEX_FEELOL -> "feelol token"
     ProviderKind.GITHUB_COPILOT -> "GitHub Copilot OAuth token"
+    ProviderKind.QWEN_CLOUD_INDIVIDUAL -> "Coding Plan API Key"
     else -> "API Key"
 }
 
@@ -109,7 +106,7 @@ private fun hintText(kind: ProviderKind): String = when (kind) {
     ProviderKind.GITHUB_COPILOT ->
         "粘贴 Copilot 登录使用的 GitHub OAuth token（通常以 ghu_ 开头）；查询 api.github.com/copilot_internal/user 的 Premium requests 余额。内部接口可能变动。"
     ProviderKind.QWEN_CLOUD_INDIVIDUAL ->
-        "仅支持国际站 Qwen Cloud Individual。登录套餐页后，在浏览器开发者工具 Network 中复制 qwencloud.com 请求的完整 Cookie 头。推理 API Key 不能查额度；Cookie 加密保存，只发往 qwencloud.com。"
+        "在阿里云百炼 Coding Plan 页面复制套餐专属 API Key（通常以 sk-sp- 开头，不是普通按量 Key）。控制台地址留空时自动依次查询国际站和国内站；填写后只查该分区，可粘贴国内 / 国际控制台页面或自定义 HTTPS 地址。Key 加密保存，只发往所选控制台。旧版 Cookie 不再使用。"
     ProviderKind.CUSTOM -> "地址返回 JSON 时优先读 used_pct，否则显示原始返回片段。"
     else -> "凭据只保存在本机，用 Android Keystore 加密（AES-256-GCM）。"
 }
@@ -124,6 +121,7 @@ private fun expiryText(raw: String?): String {
 @Composable
 fun EditScreen(
     existing: Provider?,
+    initialKind: ProviderKind = ProviderKind.DEEPSEEK,
     onBack: () -> Unit,
     onSave: (Provider) -> Unit,
     onDelete: ((Provider) -> Unit)?,
@@ -133,7 +131,7 @@ fun EditScreen(
     val scope = rememberCoroutineScope()
     val providerId = remember { existing?.id ?: UUID.randomUUID().toString() }
     var name by remember { mutableStateOf(existing?.name ?: "") }
-    var kind by remember { mutableStateOf(existing?.kind ?: ProviderKind.DEEPSEEK) }
+    var kind by remember { mutableStateOf(existing?.kind ?: initialKind) }
     var baseUrl by remember { mutableStateOf(existing?.baseUrl ?: "") }
     var keyText by remember { mutableStateOf(existing?.token ?: "") }
     var loginBusy by remember { mutableStateOf(false) }
@@ -254,8 +252,12 @@ fun EditScreen(
                                     kind = kind,
                                     name = name.ifBlank { kind.label },
                                     baseUrl = baseUrl,
-                                    token = keyText,
-                                    extra = extras.filterValues { it.isNotBlank() },
+                                    token = keyText.trim(),
+                                    extra = extras.filterValues { it.isNotBlank() }.let { values ->
+                                        if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL) {
+                                            values - "cookie"
+                                        } else values
+                                    },
                                 )
                             )
                         },
@@ -308,23 +310,33 @@ fun EditScreen(
             }
 
             if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL) {
-                OutlinedButton(
-                    shape = UiShapes.Control,
-                    border = BorderStroke(UiDimens.BorderWidth, MaterialTheme.colorScheme.outline),
-                    onClick = {
-                        try {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse(QwenCloudIndividualProvider.DASHBOARD_URL),
-                                )
-                            )
-                        } catch (_: ActivityNotFoundException) {
-                            loginError = "没有找到可打开千问套餐页的浏览器"
-                        }
-                    },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("打开 Individual 套餐页") }
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    listOf(
+                        "国内控制台" to QwenCodingPlanProvider.DASHBOARD_URL,
+                        "国际控制台" to QwenCodingPlanProvider.INTL_DASHBOARD_URL,
+                    ).forEach { (label, url) ->
+                        OutlinedButton(
+                            shape = UiShapes.Control,
+                            border = BorderStroke(
+                                UiDimens.BorderWidth,
+                                MaterialTheme.colorScheme.outline,
+                            ),
+                            onClick = {
+                                try {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+                                    )
+                                } catch (_: ActivityNotFoundException) {
+                                    loginError = "没有找到可打开千问套餐页的浏览器"
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(label) }
+                    }
+                }
                 loginError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
@@ -467,7 +479,20 @@ fun EditScreen(
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
                     shape = UiShapes.Panel,
-                    label = { Text(if (kind == ProviderKind.ZENMUX) "额度端点 URL" else "接口地址（返回 JSON）") },
+                    label = {
+                        Text(
+                            when (kind) {
+                                ProviderKind.ZENMUX -> "额度端点 URL"
+                                ProviderKind.QWEN_CLOUD_INDIVIDUAL -> "控制台地址（分区，可空）"
+                                else -> "接口地址（返回 JSON）"
+                            },
+                        )
+                    },
+                    placeholder = {
+                        if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL) {
+                            Text("留空自动探测；也可粘贴控制台分区地址")
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )

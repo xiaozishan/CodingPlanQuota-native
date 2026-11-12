@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,13 +22,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.paimon.quota.data.Prefs
 import io.paimon.quota.data.Provider
+import io.paimon.quota.data.ProviderKind
 import io.paimon.quota.data.QuotaApi
 import io.paimon.quota.data.QuotaResult
 import io.paimon.quota.data.provider.GeminiWebQuota
+import io.paimon.quota.ui.AddProviderSheet
 import io.paimon.quota.ui.EditScreen
 import io.paimon.quota.ui.HomeScreen
+import io.paimon.quota.ui.QuotaBottomDock
 import io.paimon.quota.ui.QuotaDestination
-import io.paimon.quota.ui.QuotaNavigationRail
+import io.paimon.quota.ui.QuotaSideDock
 import io.paimon.quota.ui.QuotaTheme
 import io.paimon.quota.ui.SettingsScreen
 import io.paimon.quota.ui.ThemeMode
@@ -40,7 +45,10 @@ private const val REFRESH_LOG_TAG = "QuotaRefresh"
 
 private sealed interface Screen {
     data object Home : Screen
-    data class Edit(val provider: Provider?) : Screen
+    data class Edit(
+        val provider: Provider?,
+        val initialKind: ProviderKind = ProviderKind.DEEPSEEK,
+    ) : Screen
     data object Settings : Screen
 }
 
@@ -62,6 +70,7 @@ private fun AppRoot(prefs: Prefs) {
         mutableStateOf(prefs.autoRefreshIntervalSeconds)
     }
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var showAddSheet by rememberSaveable { mutableStateOf(false) }
     var providers by remember { mutableStateOf(prefs.loadProviders()) }
     // 首次组合同步读取本地成功结果；网络刷新只在界面渲染后进行。
     var results by remember { mutableStateOf(prefs.loadQuotaResults()) }
@@ -153,40 +162,55 @@ private fun AppRoot(prefs: Prefs) {
     QuotaTheme(mode) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val wide = maxWidth >= 840.dp
-                Row(Modifier.fillMaxSize()) {
-                    if (wide) {
-                        QuotaNavigationRail(
-                            selected = if (screen == Screen.Settings) {
-                                QuotaDestination.SETTINGS
-                            } else {
-                                QuotaDestination.HOME
-                            },
-                            onSelect = { destination ->
-                                screen = when (destination) {
-                                    QuotaDestination.HOME -> Screen.Home
-                                    QuotaDestination.SETTINGS -> Screen.Settings
-                                }
-                            },
-                        )
+                val sideDock = maxWidth >= 600.dp
+                val selectedDestination = if (screen == Screen.Settings) {
+                    QuotaDestination.SETTINGS
+                } else {
+                    QuotaDestination.HOME
+                }
+                val onDestinationSelect: (QuotaDestination) -> Unit = { destination ->
+                    screen = when (destination) {
+                        QuotaDestination.HOME -> Screen.Home
+                        QuotaDestination.SETTINGS -> Screen.Settings
                     }
+                }
 
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = MaterialTheme.colorScheme.background,
+                    bottomBar = {
+                        if (!sideDock) {
+                            QuotaBottomDock(
+                                selected = selectedDestination,
+                                onSelect = onDestinationSelect,
+                                onAdd = { showAddSheet = true },
+                            )
+                        }
+                    },
+                ) { dockPadding ->
+                    Row(Modifier.fillMaxSize().padding(dockPadding)) {
+                        if (sideDock) {
+                            QuotaSideDock(
+                                selected = selectedDestination,
+                                onSelect = onDestinationSelect,
+                                onAdd = { showAddSheet = true },
+                            )
+                        }
+
+                        Box(Modifier.weight(1f).fillMaxHeight()) {
                         when (val s = screen) {
                 Screen.Home -> HomeScreen(
                     providers = providers,
                     results = results,
                     loading = loading,
                     onRefresh = { refreshAll() },
-                    onAdd = { screen = Screen.Edit(null) },
                     onEdit = { screen = Screen.Edit(it) },
-                    onSettings = { screen = Screen.Settings },
-                    showSettingsAction = !wide,
                     mergeAccounts = mergeAccounts,
                 )
 
                 is Screen.Edit -> EditScreen(
                     existing = s.provider,
+                    initialKind = s.initialKind,
                     onBack = { screen = Screen.Home },
                     onSave = { p ->
                         providers = if (s.provider == null) providers + p
@@ -227,7 +251,18 @@ private fun AppRoot(prefs: Prefs) {
                     onBack = { screen = Screen.Home },
                 )
                         }
+                        }
                     }
+                }
+
+                if (showAddSheet) {
+                    AddProviderSheet(
+                        onDismiss = { showAddSheet = false },
+                        onSelect = { kind ->
+                            showAddSheet = false
+                            screen = Screen.Edit(null, kind)
+                        },
+                    )
                 }
             }
         }

@@ -28,7 +28,8 @@ enum class ProviderKind(
     ANTIGRAVITY("Antigravity"),
     GITHUB_COPILOT("GitHub Copilot"),
     CUSTOM("自定义 JSON", needsBaseUrl = true),
-    QWEN_CLOUD_INDIVIDUAL("千问 Coding Plan Individual"),
+    // 枚举名保留用于读取旧配置；0.5.28 起实际走阿里云百炼 Coding Plan API Key。
+    QWEN_CLOUD_INDIVIDUAL("千问 Coding Plan", needsBaseUrl = true),
 }
 
 /** 一个已保存的供应商配置 */

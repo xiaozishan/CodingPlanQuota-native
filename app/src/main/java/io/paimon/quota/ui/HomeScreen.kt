@@ -30,10 +30,7 @@ fun HomeScreen(
     results: Map<String, QuotaResult>,
     loading: Boolean,
     onRefresh: () -> Unit,
-    onAdd: () -> Unit,
     onEdit: (Provider) -> Unit,
-    onSettings: () -> Unit,
-    showSettingsAction: Boolean = true,
     mergeAccounts: Boolean,
 ) {
     var rawJson by remember { mutableStateOf<String?>(null) }
@@ -58,19 +55,8 @@ fun HomeScreen(
                     TextButton(onClick = onRefresh, enabled = !loading, shape = UiShapes.Control) {
                         Text(if (loading) "刷新中" else "刷新")
                     }
-                    if (showSettingsAction) {
-                        TextButton(onClick = onSettings, shape = UiShapes.Control) { Text("设置") }
-                    }
                 },
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAdd,
-                shape = UiShapes.Card,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) { Text("＋", fontSize = 24.sp) }
         },
     ) { padding ->
         if (providers.isEmpty()) {
@@ -79,7 +65,7 @@ fun HomeScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "还没有供应商，点右下角 ＋ 添加",
+                    "还没有供应商，点导航栏 ＋ 添加",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -107,7 +93,7 @@ fun HomeScreen(
                         start = pagePadding,
                         top = 8.dp,
                         end = pagePadding,
-                        bottom = 96.dp,
+                        bottom = 32.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(cardSpacing),
                     horizontalArrangement = Arrangement.spacedBy(cardSpacing),

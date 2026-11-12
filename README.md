@@ -19,7 +19,7 @@ AI 编程套餐额度查看器，原生 Kotlin + Jetpack Compose 重写版。
 | Gemini（网页版） | Google 账号登录，读 gemini.google.com/usage 的 5 小时窗口与周额度 |
 | Antigravity | Google OAuth + PKCE |
 | GitHub Copilot | GitHub OAuth token，显示 Premium requests 剩余次数与月度总额 |
-| 千问 Coding Plan Individual | Qwen Cloud 国际站网页 Cookie，显示 5 小时 / 每周 / 每月额度 |
+| 千问 Coding Plan | 套餐专属 API Key，显示 5 小时 / 每周 / 每月额度；留空自动适配国内 / 国际站，也可自定义控制台分区地址 |
 | 自定义 JSON | 自填 Base URL 与解析规则 |
 
 ## 主要功能
@@ -44,9 +44,12 @@ gradle assembleDebug
 
 ## 版本
 
-当前版本：**0.5.26**（versionCode 31）
+当前版本：**0.6.0**（versionCode 35）
 
-- 0.5.26：新增千问 Coding Plan Individual，接入 Qwen Cloud 控制台真实用量接口（Cookie 鉴权）
+- 0.6.0：千问 Coding Plan 支持自定义控制台地址（分区）；留空仍自动探测国内 / 国际站
+- 0.5.29：手机改用底部玻璃 Dock、平板改用左侧玻璃 Dock；＋ 打开带动画的供应商选择底部抽屉
+- 0.5.28：千问 Coding Plan 改用套餐专属 API Key，接入 `queryCodingPlanInstanceInfoV2` 真实用量接口；不再使用 Cookie，支持国内 / 国际站自动探测
+- 0.5.27：新增千问套餐额度卡片（旧 Qwen Cloud Cookie 方案，0.5.28 已整体替换）
 - 0.5.25：GitHub Copilot 改显示 Premium requests 余额，不再展示 Chat / 代码补全百分比
 - 0.5.24：回到前台立即刷新，默认每 60 秒自动刷新；设置里可开关并调整间隔
 - 0.5.23：新增 GitHub Copilot，解析 Chat / 代码补全额度，兼容 Free 套餐字段

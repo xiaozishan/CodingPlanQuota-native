@@ -7,7 +7,7 @@ import io.paimon.quota.data.provider.GeminiProvider
 import io.paimon.quota.data.provider.GitHubCopilotProvider
 import io.paimon.quota.data.provider.MimoProvider
 import io.paimon.quota.data.provider.OpencodeGoProvider
-import io.paimon.quota.data.provider.QwenCloudIndividualProvider
+import io.paimon.quota.data.provider.QwenCodingPlanProvider
 import io.paimon.quota.data.provider.VolcengineProvider
 import io.paimon.quota.data.provider.ZenmuxProvider
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +67,7 @@ object QuotaApi {
                 ProviderKind.GEMINI -> GeminiProvider.fetch(p, onProviderUpdated)
                 ProviderKind.ANTIGRAVITY -> AntigravityProvider.fetch(p, onProviderUpdated)
                 ProviderKind.GITHUB_COPILOT -> GitHubCopilotProvider.fetch(p)
-                ProviderKind.QWEN_CLOUD_INDIVIDUAL -> QwenCloudIndividualProvider.fetch(p)
+                ProviderKind.QWEN_CLOUD_INDIVIDUAL -> QwenCodingPlanProvider.fetch(p)
 
                 ProviderKind.CODEX -> parseCodex(
                     Http.get(
