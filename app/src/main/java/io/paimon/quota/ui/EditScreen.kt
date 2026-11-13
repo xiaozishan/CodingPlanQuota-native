@@ -147,6 +147,7 @@ fun EditScreen(
     var manualCallback by remember { mutableStateOf("") }
     var loginJob by remember { mutableStateOf<Job?>(null) }
     var chatGptAuthSession by remember { mutableStateOf<AuthSession?>(null) }
+    var qwenLoginUrl by remember { mutableStateOf<String?>(null) }
     val extras = remember {
         mutableStateMapOf<String, String>().apply {
             existing?.extra?.forEach { (k, v) -> put(k, v) }
@@ -154,7 +155,24 @@ fun EditScreen(
     }
 
     // 登录弹窗打开时由弹窗独占返回，避免关闭弹窗的同时又退出编辑页。
-    BackHandler(enabled = authSession == null && chatGptAuthSession == null, onBack = onBack)
+    BackHandler(
+        enabled = authSession == null && chatGptAuthSession == null && qwenLoginUrl == null,
+        onBack = onBack,
+    )
+
+    qwenLoginUrl?.let { url ->
+        QwenLoginDialog(
+            startUrl = url,
+            onCancel = { qwenLoginUrl = null },
+            onCookie = { cookie, landedUrl ->
+                extras["cookie"] = cookie
+                if (landedUrl.contains("alibabacloud.com")) {
+                    extras["consoleBaseUrl"] = QwenCodingPlanProvider.INTL_DASHBOARD_URL
+                }
+                qwenLoginUrl = null
+            },
+        )
+    }
 
     fun cancelLogin() {
         loginJob?.cancel()
@@ -315,6 +333,20 @@ fun EditScreen(
             }
 
             if (kind == ProviderKind.QWEN_CLOUD_INDIVIDUAL) {
+                var regionIndex by remember { mutableStateOf(0) }
+                Button(
+                    shape = UiShapes.Control,
+                    onClick = {
+                        loginError = null
+                        qwenLoginUrl = if (regionIndex == 0) {
+                            QwenCodingPlanProvider.DASHBOARD_URL
+                        } else {
+                            QwenCodingPlanProvider.INTL_DASHBOARD_URL
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("登录并自动获取 Cookie") }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -322,7 +354,7 @@ fun EditScreen(
                     listOf(
                         "国内控制台" to QwenCodingPlanProvider.DASHBOARD_URL,
                         "国际控制台" to QwenCodingPlanProvider.INTL_DASHBOARD_URL,
-                    ).forEach { (label, url) ->
+                    ).forEachIndexed { index, (label, _) ->
                         OutlinedButton(
                             shape = UiShapes.Control,
                             border = BorderStroke(
@@ -330,13 +362,8 @@ fun EditScreen(
                                 MaterialTheme.colorScheme.outline,
                             ),
                             onClick = {
-                                try {
-                                    context.startActivity(
-                                        Intent(Intent.ACTION_VIEW, Uri.parse(url)),
-                                    )
-                                } catch (_: ActivityNotFoundException) {
-                                    loginError = "没有找到可打开千问套餐页的浏览器"
-                                }
+                                regionIndex = index
+                                loginError = "已选$label，点上面的按钮直接登录"
                             },
                             modifier = Modifier.weight(1f),
                         ) { Text(label) }
