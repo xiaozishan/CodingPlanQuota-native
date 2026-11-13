@@ -52,6 +52,12 @@ private val QWEN_LOGIN_COOKIE_MARKERS = listOf(
     "login_aliyunid_pk",
 )
 
+private const val DESKTOP_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+private const val ALTERNATE_LOGIN_URL = "https://account.aliyun.com/login/login.htm"
+
 internal fun qwenCookieLooksLoggedIn(cookie: String?): Boolean {
     if (cookie.isNullOrBlank()) return false
     return QWEN_LOGIN_COOKIE_MARKERS.any { cookie.contains(it) }
@@ -74,6 +80,8 @@ internal fun QwenLoginDialog(
     var loading by remember { mutableStateOf(true) }
     var done by remember { mutableStateOf(false) }
     var timedOut by remember { mutableStateOf(false) }
+    var currentUrl by remember { mutableStateOf(startUrl) }
+    var pageError by remember { mutableStateOf<String?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
 
     BackHandler {
@@ -117,11 +125,25 @@ internal fun QwenLoginDialog(
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
 
                 Text(
-                    if (timedOut) "还没检测到登录，继续操作即可；也可以返回手动粘贴 Cookie"
-                    else "登录完成后会自动保存登录状态并返回",
+                    pageError?.let { "加载失败：$it" }
+                        ?: if (timedOut) "还没检测到登录，继续操作即可；也可以返回手动粘贴 Cookie"
+                        else "登录完成后会自动保存登录状态并返回",
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (pageError != null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     fontSize = 12.sp,
+                )
+
+                Text(
+                    currentUrl,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
 
                 AndroidView(
@@ -131,20 +153,33 @@ internal fun QwenLoginDialog(
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.databaseEnabled = true
-                            settings.userAgentString = settings.userAgentString
-                                .replace("; wv)", ")")
-                                .replace(" Version/4.0", "")
+                            settings.userAgentString = DESKTOP_UA
+                            settings.loadsImagesAutomatically = true
+                            settings.mixedContentMode =
+                                android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             CookieManager.getInstance().setAcceptCookie(true)
                             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     loading = false
+                                    currentUrl = url.orEmpty()
                                     if (done) return
                                     if (!qwenHostMatches(url)) return
                                     val cookie = CookieManager.getInstance().getCookie(url)
                                     if (qwenCookieLooksLoggedIn(cookie) && !cookie.isNullOrBlank()) {
                                         done = true
                                         currentOnCookie(cookie, url.orEmpty())
+                                    }
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    request: android.webkit.WebResourceRequest?,
+                                    error: android.webkit.WebResourceError?,
+                                ) {
+                                    if (request?.isForMainFrame == true) {
+                                        pageError = error?.description?.toString() ?: "网络错误"
                                     }
                                 }
                             }
@@ -165,10 +200,21 @@ internal fun QwenLoginDialog(
                         onClick = {
                             done = false
                             timedOut = false
+                            pageError = null
                             loading = true
-                            webView?.reload()
+                            webView?.loadUrl(startUrl)
                         },
                     ) { Text("重新加载") }
+                    TextButton(
+                        shape = UiShapes.Control,
+                        onClick = {
+                            done = false
+                            timedOut = false
+                            pageError = null
+                            loading = true
+                            webView?.loadUrl(ALTERNATE_LOGIN_URL)
+                        },
+                    ) { Text("换登录页") }
                     TextButton(shape = UiShapes.Control, onClick = onCancel) {
                         Text("手动粘贴 Cookie")
                     }
