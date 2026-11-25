@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -12,8 +12,8 @@ android {
         applicationId = "io.paimon.quota"
         minSdk = 26
         targetSdk = 36
-        versionCode = 47
-        versionName = "0.7.2"
+        versionCode = 50
+        versionName = "0.7.4"
     }
 
     signingConfigs {
