@@ -61,7 +61,10 @@ internal object AntigravityProvider {
     private const val USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
     private const val CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
     private const val QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
-    private const val QUOTA_SUMMARY_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+    private val QUOTA_SUMMARY_URLS = listOf(
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+        "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+    )
     private const val MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
     private const val CODE_ASSIST_BODY = "{\"metadata\":{\"pluginType\":\"GEMINI\"}}"
     private const val CALLBACK_PORT = 51121
@@ -254,17 +257,20 @@ internal object AntigravityProvider {
         ).joinToString(" ｜ ").ifBlank { null }
 
         // 新接口按模型族汇总（Gemini Models / Claude and GPT models）；老接口只给扁平 buckets。
-        val summary = runCatching {
-            Http.post(QUOTA_SUMMARY_URL, "{}", quotaHeaders(accessToken))
-        }.getOrNull()
-        if (summary?.ok == true) {
-            summaryRaw = summary.body
-            summary.json?.let { body ->
-                val summaryTiers = parseQuotaSummary(body)
-                if (summaryTiers.isNotEmpty()) {
-                    return QuotaResult(true, tiers = summaryTiers, message = message, raw = raw())
-                }
+        var summaryTiers: List<Tier> = emptyList()
+        val summaryBody = if (project.isBlank()) "{}" else JSONObject().put("project", project).toString()
+        for (url in QUOTA_SUMMARY_URLS) {
+            val summary = runCatching { Http.post(url, summaryBody, quotaHeaders(accessToken)) }.getOrNull()
+            if (summary == null) continue
+            val entry = url + " HTTP " + summary.code + "\n" + summary.body
+            summaryRaw = if (summaryRaw.isNullOrBlank()) entry else summaryRaw + "\n\n" + entry
+            if (summary.ok) {
+                summary.json?.let { body -> summaryTiers = parseQuotaSummary(body) }
             }
+            if (summaryTiers.size >= 2) break
+        }
+        if (summaryTiers.size >= 2) {
+            return QuotaResult(true, tiers = summaryTiers, message = message, raw = raw())
         }
 
         val primary = Http.post(QUOTA_URL, "{}", quotaHeaders(accessToken))
@@ -278,7 +284,7 @@ internal object AntigravityProvider {
                 error = notJsonError("查询 Antigravity 额度", primary),
                 raw = raw(),
             )
-        val tiers = parseBuckets(primaryJson)
+        val tiers = mergeTiers(summaryTiers, parseBuckets(primaryJson))
         if (tiers.isNotEmpty()) {
             return QuotaResult(true, tiers = tiers, message = message, raw = raw())
         }
@@ -300,7 +306,7 @@ internal object AntigravityProvider {
                 error = "retrieveUserQuota 没有可展示的额度；" + notJsonError("fetchAvailableModels 兜底", fallback),
                 raw = raw(),
             )
-        val fallbackTiers = parseAvailableModels(fallbackJson)
+        val fallbackTiers = mergeTiers(summaryTiers, parseAvailableModels(fallbackJson))
         return if (fallbackTiers.isEmpty()) {
             QuotaResult(
                 false,
@@ -314,7 +320,7 @@ internal object AntigravityProvider {
 
     private fun quotaHeaders(accessToken: String): Map<String, String> = bearer(accessToken) + mapOf(
         "Content-Type" to "application/json",
-        "User-Agent" to "Antigravity/1.0.0",
+        "User-Agent" to "Antigravity/1.15.0",
         "Client-Metadata" to CLIENT_METADATA,
     )
 
@@ -421,49 +427,99 @@ internal object AntigravityProvider {
         return poolTiers(buckets)
     }
 
+    private fun summaryGroupArray(body: JSONObject): JSONArray? {
+        val keys = listOf("groups", "quotaGroups", "quota_groups")
+        for (key in keys) {
+            body.optJSONArray(key)?.let { return it }
+        }
+        for (wrapper in listOf("response", "result")) {
+            val obj = body.optJSONObject(wrapper) ?: continue
+            for (key in keys) {
+                obj.optJSONArray(key)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun summaryFamily(bucketId: String, groupId: String, groupName: String): String? {
+        val bucket = bucketId.lowercase(Locale.US)
+        val group = groupId.lowercase(Locale.US)
+        val name = groupName.lowercase(Locale.US)
+        if (bucket.contains("argon") || group.contains("argon") || name.contains("argon")) return "argon"
+        val claude = bucket.startsWith("3p") || bucket.contains("3p-") || bucket.contains("claude") ||
+            bucket.contains("gpt") || group.contains("third-party") || group.contains("claude") ||
+            group.contains("gpt") || name.contains("claude") || name.contains("gpt")
+        if (claude) return "claude"
+        if (bucket.startsWith("gemini") || group.contains("gemini") || name.contains("gemini")) return "gemini"
+        return null
+    }
+
+    private fun windowKindOf(item: JSONObject): String {
+        val raw = listOf(
+            toStr(item.opt("window")),
+            toStr(item.opt("displayName")),
+            toStr(item.opt("display_name")),
+            toStr(item.opt("description")),
+        ).filterNotNull().joinToString(" ").lowercase(Locale.US)
+        return when {
+            raw.contains("week") || raw.contains("7d") || raw.contains("7 day") -> "weekly"
+            raw.contains("5h") || raw.contains("5 h") || raw.contains("five hour") -> "session"
+            else -> "other"
+        }
+    }
+
+    private fun mergeTiers(primary: List<Tier>, extra: List<Tier>): List<Tier> {
+        if (primary.isEmpty()) return extra
+        if (extra.isEmpty()) return primary
+        val labels = primary.map { it.label }.toSet()
+        return primary + extra.filter { it.label !in labels }
+    }
+
     /**
-     * 摘要接口按模型族返回共享配额池：
-     * groups[].displayName = Gemini Models / Claude and GPT models / Gemini 4 Argon，
-     * 每个 group 下是 5 小时与每周两个 bucket，只带 remainingFraction 与 window 标签。
+     * 摘要接口按模型族返回共享配额池，字段随账号/版本有差异：
+     * groups / response.groups / result.groups / quotaGroups，
+     * bucket 侧优先 bucketId（gemini-5h、gemini-weekly、3p-5h、gemini-argon-*）。
      */
     private fun parseQuotaSummary(body: JSONObject): List<Tier> {
-        val groups = body.optJSONArray("groups")
-            ?: body.optJSONObject("result")?.optJSONArray("groups")
-            ?: return emptyList()
-        val buckets = mutableListOf<Bucket>()
+        val groups = summaryGroupArray(body) ?: return emptyList()
+        val claude = mutableListOf<Bucket>()
+        val gemini = mutableListOf<Bucket>()
+        val argon = mutableListOf<Bucket>()
         for (i in 0 until groups.length()) {
             val group = groups.optJSONObject(i) ?: continue
-            val name = toStr(group.opt("displayName")) ?: toStr(group.opt("display_name")) ?: continue
-            val family = when {
-                name.contains("claude", ignoreCase = true) -> "claude"
-                name.contains("gemini", ignoreCase = true) -> "gemini"
-                else -> continue
-            }
+            val groupName = toStr(group.opt("displayName")) ?: toStr(group.opt("display_name")) ?: ""
+            val groupId = toStr(group.opt("id")) ?: toStr(group.opt("groupId"))
+                ?: toStr(group.opt("group_id")) ?: ""
             val arr = group.optJSONArray("buckets") ?: continue
             for (j in 0 until arr.length()) {
                 val item = arr.optJSONObject(j) ?: continue
-                val fraction = remainingFraction(item) ?: continue
-                val windowLabel = listOf(
-                    toStr(item.opt("window")),
-                    toStr(item.opt("displayName")),
-                    toStr(item.opt("display_name")),
-                    toStr(item.opt("description")),
-                ).filterNotNull().joinToString(" ").ifBlank { name }
+                val bucketId = toStr(item.opt("bucketId")) ?: toStr(item.opt("bucket_id"))
+                    ?: toStr(item.opt("id")) ?: ""
+                val family = summaryFamily(bucketId, groupId, groupName) ?: continue
+                val hasBucket = item.has("window") || item.has("resetTime") ||
+                    item.has("reset_time") || bucketId.isNotEmpty()
+                val fraction = remainingFraction(item) ?: if (hasBucket) 0.0 else continue
                 val resetMs = resetEpoch(item.opt("reset_time")) ?: resetEpoch(item.opt("resetTime"))
-                val reset = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
-                buckets.add(
-                    Bucket(
-                        model = family + " " + windowLabel,
-                        usedPct = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0),
-                        resetText = reset,
-                        resetMs = resetMs,
-                    )
+                val resetText = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
+                val bucket = Bucket(
+                    model = family + "|" + windowKindOf(item) + "|" + bucketId,
+                    usedPct = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0),
+                    resetText = resetText,
+                    resetMs = resetMs,
                 )
+                when (family) {
+                    "claude" -> claude.add(bucket)
+                    "gemini" -> gemini.add(bucket)
+                    "argon" -> argon.add(bucket)
+                }
             }
         }
-        return poolTiers(buckets)
+        return listOfNotNull(
+            summarizePool("Claude 池", claude),
+            summarizePool("Gemini 池", gemini),
+            summarizePool("Gemini 4 Argon", argon),
+        )
     }
-
     private fun poolTiers(buckets: List<Bucket>): List<Tier> {
         val claude = mutableListOf<Bucket>()
         val gemini = mutableListOf<Bucket>()
@@ -483,10 +539,8 @@ internal object AntigravityProvider {
     private fun summarizePool(label: String, group: List<Bucket>): Tier? {
         if (group.isEmpty()) return null
         val worst = group.maxByOrNull { it.usedPct } ?: return null
-        val earliest = group.mapNotNull { it.resetMs }.minOrNull()
-        val resetLabel = earliest?.let { earliestMs ->
-            group.firstOrNull { it.resetMs == earliestMs }?.resetText
-        } ?: worst.resetText
+        // 未消费的桶，服务端仍会回一个滚动的假 resetTime，别当倒计时展示。
+        val resetLabel = if (worst.usedPct <= 0.0001) null else worst.resetText
         return Tier(label, worst.usedPct, resetLabel)
     }
 
