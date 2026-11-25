@@ -61,6 +61,7 @@ internal object AntigravityProvider {
     private const val USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
     private const val CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
     private const val QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+    private const val QUOTA_SUMMARY_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
     private const val MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
     private const val CODE_ASSIST_BODY = "{\"metadata\":{\"pluginType\":\"GEMINI\"}}"
     private const val CALLBACK_PORT = 51121
@@ -238,9 +239,11 @@ internal object AntigravityProvider {
             }
         }
 
+        var summaryRaw: String? = null
         var primaryRaw: String? = null
         var fallbackRaw: String? = null
         fun raw(): String? = rawSections(
+            "retrieveUserQuotaSummary" to summaryRaw,
             "retrieveUserQuota" to primaryRaw,
             "fetchAvailableModels" to fallbackRaw,
             "loadCodeAssist" to codeAssistRaw,
@@ -249,6 +252,20 @@ internal object AntigravityProvider {
             current.extra["email"]?.takeIf { it.isNotBlank() },
             planName?.takeIf { it.isNotBlank() },
         ).joinToString(" ｜ ").ifBlank { null }
+
+        // 新接口按模型族汇总（Gemini Models / Claude and GPT models）；老接口只给扁平 buckets。
+        val summary = runCatching {
+            Http.post(QUOTA_SUMMARY_URL, "{}", quotaHeaders(accessToken))
+        }.getOrNull()
+        if (summary?.ok == true) {
+            summaryRaw = summary.body
+            summary.json?.let { body ->
+                val summaryTiers = parseQuotaSummary(body)
+                if (summaryTiers.isNotEmpty()) {
+                    return QuotaResult(true, tiers = summaryTiers, message = message, raw = raw())
+                }
+            }
+        }
 
         val primary = Http.post(QUOTA_URL, "{}", quotaHeaders(accessToken))
         if (primary.ok) primaryRaw = primary.body
@@ -400,6 +417,49 @@ internal object AntigravityProvider {
             val reset = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
             val used = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0)
             buckets.add(Bucket(model, used, reset, resetMs))
+        }
+        return poolTiers(buckets)
+    }
+
+    /**
+     * 摘要接口按模型族返回共享配额池：
+     * groups[].displayName = Gemini Models / Claude and GPT models / Gemini 4 Argon，
+     * 每个 group 下是 5 小时与每周两个 bucket，只带 remainingFraction 与 window 标签。
+     */
+    private fun parseQuotaSummary(body: JSONObject): List<Tier> {
+        val groups = body.optJSONArray("groups")
+            ?: body.optJSONObject("result")?.optJSONArray("groups")
+            ?: return emptyList()
+        val buckets = mutableListOf<Bucket>()
+        for (i in 0 until groups.length()) {
+            val group = groups.optJSONObject(i) ?: continue
+            val name = toStr(group.opt("displayName")) ?: toStr(group.opt("display_name")) ?: continue
+            val family = when {
+                name.contains("claude", ignoreCase = true) -> "claude"
+                name.contains("gemini", ignoreCase = true) -> "gemini"
+                else -> continue
+            }
+            val arr = group.optJSONArray("buckets") ?: continue
+            for (j in 0 until arr.length()) {
+                val item = arr.optJSONObject(j) ?: continue
+                val fraction = remainingFraction(item) ?: continue
+                val windowLabel = listOf(
+                    toStr(item.opt("window")),
+                    toStr(item.opt("displayName")),
+                    toStr(item.opt("display_name")),
+                    toStr(item.opt("description")),
+                ).filterNotNull().joinToString(" ").ifBlank { name }
+                val resetMs = resetEpoch(item.opt("reset_time")) ?: resetEpoch(item.opt("resetTime"))
+                val reset = resetText(item.opt("reset_time")) ?: resetText(item.opt("resetTime"))
+                buckets.add(
+                    Bucket(
+                        model = family + " " + windowLabel,
+                        usedPct = ((1.0 - fraction) * 100.0).coerceIn(0.0, 100.0),
+                        resetText = reset,
+                        resetMs = resetMs,
+                    )
+                )
+            }
         }
         return poolTiers(buckets)
     }
